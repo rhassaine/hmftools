@@ -52,6 +52,14 @@ public class SvgRender
             entry('T', new Color(145, 0, 7))
     );
 
+    private final static Color AMINO_ACID_MATCH_LIGHT_BG = new Color(92, 92, 164);
+    private final static Color AMINO_ACID_MATCH_DARK_BG = new Color(12, 12, 120);
+    private final static List<Color> AMINO_ACID_MATCH_BG_COLOURS = Lists.newArrayList(AMINO_ACID_MATCH_LIGHT_BG, AMINO_ACID_MATCH_DARK_BG);
+
+    private final static Color AMINO_ACID_MISMATCH_LIGHT_BG = new Color(179, 130, 77);
+    private final static Color AMINO_ACID_MISMATCH_DARK_BG = new Color(182, 103, 18);
+    private final static List<Color> AMINO_ACID_MISMATCH_BG_COLOURS = Lists.newArrayList(AMINO_ACID_MISMATCH_LIGHT_BG, AMINO_ACID_MISMATCH_DARK_BG);
+
     private static final int BOX_PADDING = 1;
     private static final double BASE_BOX_SIZE = 30.0;
     private static final double DEL_CONNECTOR_BOX_PROPORTION = 0.2;
@@ -454,15 +462,11 @@ public class SvgRender
         }
     }
 
-    // TODO: review to bottom of file
     public record RenderedGeneData(SVGGraphics2D refSvgCanvas, SVGGraphics2D altSvgCanvas) {}
 
-    @Nullable
-    public static RenderedGeneData renderGeneData(double baseBoxSizePx, final BaseRegion renderRegion, final String geneName,
-            boolean posStrand, final List<GeneRegionViewModel> refViewModels, final List<GeneRegionViewModel> altViewModels)
+    public static RenderedGeneData renderGeneData(double baseBoxSizePx, final BaseRegion renderRegion, boolean posStrand,
+            final List<GeneRegionViewModel> refViewModels, final List<GeneRegionViewModel> altViewModels)
     {
-        // TODO: cleanup.
-
         SVGGraphics2D refSvgCanvas = new SVGGraphics2D(
                 baseBoxSizePx * (renderRegion.baseLength() + 2 * BOX_PADDING), baseBoxSizePx);
         renderGeneRegions(refSvgCanvas, baseBoxSizePx, renderRegion, posStrand, refViewModels, true);
@@ -474,23 +478,12 @@ public class SvgRender
         return new RenderedGeneData(refSvgCanvas, altSvgCanvas);
     }
 
-    public static void renderGeneRegions(final SVGGraphics2D svgCanvas, double baseBoxSizePx,
-            final BaseRegion renderRegion, boolean posStrand, final List<GeneRegionViewModel> viewModels, final boolean renderRef)
+    public static void renderGeneRegions(final SVGGraphics2D svgCanvas, double baseBoxSizePx,  final BaseRegion renderRegion,
+            boolean posStrand, final List<GeneRegionViewModel> viewModels, boolean renderRef)
     {
-        // TODO: cleanup
-
         // work in units of BASE_BOX_SIZE
         svgCanvas.scale(baseBoxSizePx, baseBoxSizePx);
         svgCanvas.setFont(BASE_FONT);
-
-        final Color lightBlue = new Color(92, 92, 164);
-        final Color darkBlue = new Color(12, 12, 120);
-
-        final Color lightOrange = new Color(179, 130, 77);
-        final Color darkOrange = new Color(182, 103, 18);
-
-        List<Color> matchBgColours = Lists.newArrayList(lightBlue, darkBlue);
-        List<Color> mismatchBgColours = Lists.newArrayList(lightOrange, darkOrange);
         for(int i = 0; i < viewModels.size(); i++)
         {
             GeneRegionViewModel viewModel = viewModels.get(i);
@@ -502,7 +495,7 @@ public class SvgRender
 
             if(viewModel instanceof IntronicRegionViewModel)
             {
-                svgCanvas.setColor(lightBlue);
+                svgCanvas.setColor(AMINO_ACID_MATCH_LIGHT_BG);
                 Stroke currentStroke = svgCanvas.getStroke();
                 Stroke stroke = new BasicStroke((float) (2.0 / BASE_BOX_SIZE));
                 svgCanvas.setStroke(stroke);
@@ -516,7 +509,7 @@ public class SvgRender
 
             if(viewModel instanceof NonCodingExonicRegionViewModel)
             {
-                svgCanvas.setColor(lightBlue);
+                svgCanvas.setColor(AMINO_ACID_MATCH_LIGHT_BG);
                 double left = max(viewModel.region().start(), renderRegion.start()) - renderRegion.start() + BOX_PADDING;
                 double right = min(viewModel.region().end(), renderRegion.end()) - renderRegion.start() + BOX_PADDING;
                 double len = right - left + 1;
@@ -532,7 +525,6 @@ public class SvgRender
             int boxIdx = startPos - renderRegion.start() + BOX_PADDING;
             if(viewModel instanceof DelViewModel)
             {
-                DelViewModel delModel = (DelViewModel) viewModel;
                 drawDel(svgCanvas,null, boxIdx, boxIdx + boxWidth - 1);
                 continue;
             }
@@ -543,21 +535,13 @@ public class SvgRender
 
             Color bgColour;
             if(aa == '*')
-            {
                 bgColour = Color.RED;
-            }
             else if(aaModel.isStart())
-            {
                 bgColour = Color.GREEN;
-            }
             else if(matchesRef)
-            {
-                bgColour = matchBgColours.get(i % matchBgColours.size());
-            }
+                bgColour = AMINO_ACID_MATCH_BG_COLOURS.get(i % AMINO_ACID_MATCH_BG_COLOURS.size());
             else
-            {
-                bgColour = mismatchBgColours.get(i % mismatchBgColours.size());
-            }
+                bgColour = AMINO_ACID_MISMATCH_BG_COLOURS.get(i % AMINO_ACID_MISMATCH_BG_COLOURS.size());
 
             svgCanvas.setColor(bgColour);
             Rectangle2D.Double box = new Rectangle2D.Double(boxIdx, 0.0, boxWidth, 1.0);
@@ -572,12 +556,12 @@ public class SvgRender
         if(posStrand)
         {
             drawForwardArrow(svgCanvas, 0.5, 0.0, 0.5, 1.0);
-            drawForwardArrow(svgCanvas, renderRegion.baseLength() + 1, 0.0, 0.5, 1.0);
+            drawForwardArrow(svgCanvas, renderRegion.baseLength() + BOX_PADDING, 0.0, 0.5, 1.0);
         }
         else
         {
             drawReverseArrow(svgCanvas, 0.5, 0.0, 0.5, 1.0);
-            drawReverseArrow(svgCanvas, renderRegion.baseLength() + 1, 0.0, 0.5, 1.0);
+            drawReverseArrow(svgCanvas, renderRegion.baseLength() + BOX_PADDING, 0.0, 0.5, 1.0);
         }
 
         // display inserts
@@ -598,6 +582,9 @@ public class SvgRender
             int endPos = min(region.end(), renderRegion.end());
             int boxWidth = endPos - startPos + 1;
             int boxIdx = startPos - renderRegion.start() + BOX_PADDING;
+
+            // TODO: HERE: at least 1 base before insert.
+            int indelPos = posStrand ? region.start()
             int indelIdx = boxIdx + viewModel.basesBeforeRightInsert() * (posStrand ? 1 : -1);
             if(!renderRef && viewModel.basesBeforeRightInsert() > 0 && indelIdx >= BOX_PADDING && indelIdx <= BOX_PADDING + renderRegion.baseLength())
             {
