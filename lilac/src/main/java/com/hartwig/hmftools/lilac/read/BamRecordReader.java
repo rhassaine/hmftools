@@ -4,7 +4,7 @@ import static java.lang.Math.abs;
 import static java.lang.Math.floor;
 
 import static com.hartwig.hmftools.common.region.BaseRegion.positionsOverlap;
-import static com.hartwig.hmftools.common.sequencing.UltimaBamUtils.extractLowQualIndices;
+import static com.hartwig.hmftools.common.sequencing.UltimaBamUtils.extractLowQualCount;
 import static com.hartwig.hmftools.lilac.LilacConfig.LL_LOGGER;
 import static com.hartwig.hmftools.lilac.LilacConfig.isUltima;
 import static com.hartwig.hmftools.lilac.LilacConstants.HLA_CHR;
@@ -12,8 +12,8 @@ import static com.hartwig.hmftools.lilac.LilacConstants.MAX_LOW_BASE_PERC;
 import static com.hartwig.hmftools.lilac.LilacConstants.SPLICE_VARIANT_BUFFER;
 import static com.hartwig.hmftools.lilac.LilacUtils.belowMinQual;
 import static com.hartwig.hmftools.lilac.ReferenceData.GENE_CACHE;
-import static com.hartwig.hmftools.lilac.ReferenceData.INDEL_PON;
-import static com.hartwig.hmftools.lilac.ReferenceData.STOP_LOSS_ON_C_INDEL;
+import static com.hartwig.hmftools.lilac.ReferenceData.INDEL_PON_;
+import static com.hartwig.hmftools.lilac.ReferenceData.STOP_LOSS_ON_C_INDEL_;
 import static com.hartwig.hmftools.lilac.fragment.FragmentUtils.mergeFragments;
 
 import java.io.File;
@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.StringJoiner;
 import java.util.stream.Collectors;
 
 import com.google.common.collect.Lists;
@@ -54,8 +55,8 @@ public class BamRecordReader implements BamReader
     private final NucleotideFragmentFactory mFragmentFactory;
 
     private final Map<Indel, List<Fragment>> mKnownStopLossFragments;
-    private final Map<Indel, Integer> mUnmatchedIndels;
-    private final Map<Indel, Integer> mUnmatchedPONIndels;
+    private final Map<Indel, Integer> mUnmatchedIndels_;
+    private final Map<Indel, Integer> mUnmatchedPONIndels_;
     private final Set<String> mDiscardIndelReadIds;
     private int mFilteredRecordCount;
 
@@ -85,8 +86,8 @@ public class BamRecordReader implements BamReader
         mFilteredRecordCount = 0;
 
         mKnownStopLossFragments = Maps.newHashMap();
-        mUnmatchedIndels = Maps.newHashMap();
-        mUnmatchedPONIndels = Maps.newHashMap();
+        mUnmatchedIndels_ = Maps.newHashMap();
+        mUnmatchedPONIndels_ = Maps.newHashMap();
         mDiscardIndelReadIds = Sets.newHashSet();
     }
 
@@ -97,9 +98,9 @@ public class BamRecordReader implements BamReader
     public Map<Indel, Integer> unmatchedIndels(int minCount)
     {
         Map<Indel, Integer> filteredMap = Maps.newHashMap();
-        mUnmatchedIndels.entrySet().stream()
+        mUnmatchedIndels_.entrySet().stream()
                 .filter(x -> x.getValue() >= minCount)
-                .filter(x -> !x.getKey().equals(STOP_LOSS_ON_C_INDEL))
+                .filter(x -> !x.getKey().equals(STOP_LOSS_ON_C_INDEL_))
                 .forEach(x -> filteredMap.put(x.getKey(), x.getValue()));
         return filteredMap;
     }
@@ -107,7 +108,7 @@ public class BamRecordReader implements BamReader
     public Map<Indel, Integer> unmatchedPonIndels(int minCount)
     {
         Map<Indel, Integer> filteredMap = Maps.newHashMap();
-        mUnmatchedPONIndels.entrySet().stream()
+        mUnmatchedPONIndels_.entrySet().stream()
                 .filter(x -> x.getValue() >= minCount)
                 .forEach(x -> filteredMap.put(x.getKey(), x.getValue()));
         return filteredMap;
@@ -140,8 +141,9 @@ public class BamRecordReader implements BamReader
 
         for(SAMRecord record : records)
         {
-            if(filterLowQualRead(record))
-                continue;
+            // TODO:
+//            if(filterLowQualRead(record))
+//                continue;
 
             List<BaseRegion> codingExonOverlaps = geneCodingRegions.CodingRegions.stream()
                     .filter(x -> positionsOverlap(x.start(), x.end(), record.getAlignmentStart(), record.getAlignmentEnd()))
@@ -161,11 +163,34 @@ public class BamRecordReader implements BamReader
             }
             else
             {
+                // TODO: no low qual filtering of reads
+                // TODO: remove this
+                if(filterLowQualRead(record))
+                {
+                    StringJoiner logMsgBuilder = new StringJoiner(",");
+                    logMsgBuilder.add("*** LOW QUAL READ");
+                    logMsgBuilder.add(record.getReadName());
+                    logMsgBuilder.add(record.getContig());
+                    logMsgBuilder.add(String.valueOf(record.getAlignmentStart()));
+                    System.out.println(logMsgBuilder.toString());
+
+                    continue;
+                }
+
                 codingExonOverlaps.forEach(x -> reads.add(Read.createRead(x, record, true, true)));
             }
         }
 
         Map<String, Fragment> readIdFragments = createFragments(geneCodingRegions.GeneName, geneCodingRegions.Strand, reads);
+
+        // TODO: remove logging
+        System.out.println("### readIdFragments.size() = " + readIdFragments.size());
+
+        // TODO: remove logging
+        long dicardedFragmentsCount = readIdFragments.values().stream()
+                .filter(x -> mDiscardIndelReadIds.contains(x.id()))
+                .count();
+        System.out.println("### dicardedFragmentsCount = " + dicardedFragmentsCount);
 
         List<Fragment> readFragments = readIdFragments.values().stream()
                 .filter(x -> !mDiscardIndelReadIds.contains(x.id()))
@@ -183,7 +208,7 @@ public class BamRecordReader implements BamReader
         int lowQualCount;
         if(isUltima())
         {
-            lowQualCount = extractLowQualIndices(read).size();
+            lowQualCount = extractLowQualCount(read);
             return lowQualCount >= qualCountThreshold;
         }
 
@@ -240,32 +265,43 @@ public class BamRecordReader implements BamReader
                     mergeFragments(existingFragment, fragment);
                 }
 
-                if(read.getIndels().contains(STOP_LOSS_ON_C_INDEL))
+                if(read.getValidIndels_().contains(STOP_LOSS_ON_C_INDEL_))
                     addKnownIndelFragment(existingFragment);
 
                 continue;
             }
 
-            if(read.containsIndel())
+            if(read.containsValidIndel_())
             {
-                if(read.getIndels().contains(STOP_LOSS_ON_C_INDEL))
+                if(read.getValidIndels_().contains(STOP_LOSS_ON_C_INDEL_))
                 {
                     LL_LOGGER.trace("missing known indel fragment: {} {}", read.Id, read.readInfo());
                 }
 
                 // the other read belonging to this fragment won't be used
                 mDiscardIndelReadIds.add(read.Id);
+
+                // TODO: remove this
+                StringJoiner logMsgBuilder = new StringJoiner(",");
+                logMsgBuilder.add("*** UNMATCHED");
+                logMsgBuilder.add(read.bamRecord().getReadName());
+                logMsgBuilder.add(read.bamRecord().getContig());
+                logMsgBuilder.add(String.valueOf(read.bamRecord().getAlignmentStart()));
+                for(Indel indel : read.getValidIndels_())
+                    logMsgBuilder.add(indel.toString());
+
+                System.out.println(logMsgBuilder.toString());
             }
 
-            for(Indel indel : read.getIndels())
+            for(Indel indel : read.getValidIndels_())
             {
-                if(INDEL_PON.contains(indel))
+                if(INDEL_PON_.contains(indel))
                 {
-                    incrementIndelCounter(mUnmatchedPONIndels, indel);
+                    incrementIndelCounter(mUnmatchedPONIndels_, indel);
                     continue;
                 }
 
-                incrementIndelCounter(mUnmatchedIndels, indel);
+                incrementIndelCounter(mUnmatchedIndels_, indel);
             }
         }
 
@@ -274,11 +310,11 @@ public class BamRecordReader implements BamReader
 
     private void addKnownIndelFragment(final Fragment fragment)
     {
-        List<Fragment> indelFrags = mKnownStopLossFragments.get(STOP_LOSS_ON_C_INDEL);
+        List<Fragment> indelFrags = mKnownStopLossFragments.get(STOP_LOSS_ON_C_INDEL_);
         if(indelFrags == null)
         {
             indelFrags = Lists.newArrayList();
-            mKnownStopLossFragments.put(STOP_LOSS_ON_C_INDEL, indelFrags);
+            mKnownStopLossFragments.put(STOP_LOSS_ON_C_INDEL_, indelFrags);
         }
         else if(indelFrags.contains(fragment))
         {
@@ -430,8 +466,8 @@ public class BamRecordReader implements BamReader
     {
         if(variant.Alt.length() != variant.Ref.length())
         {
-            Indel expectedIndel = new Indel(variant.Chromosome, variant.Position, variant.Ref, variant.Alt);
-            return record.getIndels().stream().anyMatch(x -> x.match(expectedIndel));
+            Indel expectedIndel = Indel.create__(variant.Chromosome, variant.Position, variant.Ref, variant.Alt);
+            return record.getValidIndels_().stream().anyMatch(x -> x.match_(expectedIndel));
         }
 
         for(int i = 0; i < variant.Alt.length(); ++i)

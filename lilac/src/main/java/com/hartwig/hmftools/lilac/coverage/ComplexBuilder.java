@@ -137,16 +137,16 @@ public class ComplexBuilder
                 HlaAllele.toString(commonAllelesFromSameGroupAsDubiousAlleles));
 
         // keep known stop-loss alleles
-        List<HlaAllele> allelesWithStopLossIndel = recoveredAlleles.stream()
-                .filter(mRefData.KnownStopLossIndelAlleles::containsValue)
+        List<HlaAllele> allelesWithStopLossIndel_ = recoveredAlleles.stream()
+                .filter(mRefData.KnownStopLossIndelAlleles_::containsValue)
                 .filter(x -> !candidatesAfterUniqueGroups.contains(x))
                 .collect(Collectors.toList());
 
-        candidatesAfterUniqueGroups.addAll(allelesWithStopLossIndel);
+        candidatesAfterUniqueGroups.addAll(allelesWithStopLossIndel_);
 
         LL_LOGGER.debug("  keeping {} allele(s) with stop loss indel{}{}",
-                allelesWithStopLossIndel.size(), allelesWithStopLossIndel.isEmpty() ? "" : ": ",
-                HlaAllele.toString(allelesWithStopLossIndel));
+                allelesWithStopLossIndel_.size(), allelesWithStopLossIndel_.isEmpty() ? "" : ": ",
+                HlaAllele.toString(allelesWithStopLossIndel_));
 
         recoveredAlleles.stream().filter(candidatesAfterUniqueGroups::contains).forEach(mConfirmedRecoveredAlleles::add);
 

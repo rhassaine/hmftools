@@ -71,7 +71,7 @@ public final class UltimaBamUtils
         return Integer.parseInt(qualItems[0]);
     }
 
-    public static List<Integer> extractLowQualIndices(final SAMRecord record)
+    public static List<Integer> extractLowQualIndices_(final SAMRecord record)
     {
         String qualTag = record.getStringAttribute(ULT_QUAL_TAG);
 

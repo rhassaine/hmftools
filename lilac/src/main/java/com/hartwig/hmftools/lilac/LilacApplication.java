@@ -240,16 +240,16 @@ public class LilacApplication
         // make special note of the known stop-loss INDEL on HLA-C
         Map<HlaAllele, List<Fragment>> knownStopLossFragments = Maps.newHashMap();
 
-        for(Map.Entry<Indel, List<Fragment>> entry : mRefBamReader.getKnownStopLossFragments().entrySet())
+        for(Map.Entry<Indel, List<Fragment>> entry_ : mRefBamReader.getKnownStopLossFragments().entrySet())
         {
-            HlaAllele allele = mRefData.KnownStopLossIndelAlleles.get(entry.getKey());
+            HlaAllele allele = mRefData.KnownStopLossIndelAlleles_.get(entry_.getKey());
 
             if(allele != null)
             {
                 LL_LOGGER.info("recovering stop loss allele({}) with {} fragments", allele,
-                        entry.getValue().size());
+                        entry_.getValue().size());
 
-                knownStopLossFragments.put(allele, entry.getValue());
+                knownStopLossFragments.put(allele, entry_.getValue());
 
                 if(!candidateAlleles.contains(allele))
                     recoveredAlleles.add(allele);

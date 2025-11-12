@@ -9,13 +9,15 @@ import static com.hartwig.hmftools.common.bam.CigarUtils.getReadIndexFromPositio
 import static com.hartwig.hmftools.common.bam.CigarUtils.leftSoftClipLength;
 import static com.hartwig.hmftools.common.bam.CigarUtils.rightSoftClipLength;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.generateMappedCoords;
-import static com.hartwig.hmftools.common.sequencing.UltimaBamUtils.extractLowQualIndices;
+import static com.hartwig.hmftools.common.sequencing.UltimaBamUtils.extractLowQualIndices_;
 import static com.hartwig.hmftools.common.sv.StartEndIterator.SE_END;
 import static com.hartwig.hmftools.common.sv.StartEndIterator.SE_START;
+import static com.hartwig.hmftools.lilac.LilacConfig.isSbx;
 import static com.hartwig.hmftools.lilac.LilacConfig.isUltima;
 import static com.hartwig.hmftools.lilac.LilacConstants.LOW_BASE_QUAL_THRESHOLD;
 import static com.hartwig.hmftools.lilac.LilacConstants.LOW_BASE_TRIM_PERC;
 import static com.hartwig.hmftools.lilac.LilacUtils.belowMinQual;
+import static com.hartwig.hmftools.lilac.ReferenceData.refBases;
 
 import java.util.List;
 import java.util.Set;
@@ -46,18 +48,20 @@ public class Read
     public final int ReadIndexStart;
     public final int ReadIndexEnd;
 
-    private final List<Indel> mIndels; // indels within the coding region
+    private final List<Indel> mValidIndels_; // non-ignored indels within the coding region
+    private final List<Indel> mIgnoredIndels_; // ignored indels within the coding region
     private final SAMRecord mRecord;
     private final int mTrimmedBases;
 
     public Read(
-            final String id, int softClippedStart, int softClippedEnd, final List<Indel> indels, int positionStart,
+            final String id, int softClippedStart, int softClippedEnd, final List<Indel> indels_, int positionStart,
             int positionEnd, int readIndexStart, int readIndexEnd, final SAMRecord record, int trimmedBases)
     {
         Id = id;
         SoftClippedStart = softClippedStart;
         SoftClippedEnd = softClippedEnd;
-        mIndels = indels;
+        mValidIndels_ = indels_.stream().filter(x -> !x.Ignore).toList();
+        mIgnoredIndels_ = indels_.stream().filter(x -> x.Ignore).toList();
         PositionStart = positionStart;
         PositionEnd = positionEnd;
         ReadIndexStart = readIndexStart;
@@ -72,26 +76,27 @@ public class Read
                 mRecord.getContig(), mRecord.getStart(), mRecord.getEnd(), mRecord.getCigarString());
     }
 
-    public String toString() { return format("%s %s indels(%s) sc(%d/%d)",
-            Id, readInfo(), mIndels.size(), SoftClippedStart, SoftClippedEnd); }
+    public String toString() { return format("%s %s indels(%d) ignoredIndels(%d) sc(%d/%d)",
+            Id, readInfo(), mValidIndels_.size(), mIgnoredIndels_.size(), SoftClippedStart, SoftClippedEnd); }
 
-    public List<Indel> getIndels() { return mIndels; }
+    public List<Indel> getValidIndels_() { return mValidIndels_; }
+    public List<Indel> getIgnoredIndels_() { return mIgnoredIndels_; }
     public int trimmedBases() { return mTrimmedBases; }
 
     public SAMRecord bamRecord() { return mRecord; }
 
-    public final int maxIndelSize()
+    public final int maxValidIndelSize_()
     {
-        return mIndels.stream().mapToInt(x -> abs(x.Length)).max().orElse(0);
+        return mValidIndels_.stream().mapToInt(x -> abs(x.Length)).max().orElse(0);
     }
 
     public final boolean containsSoftClip() { return SoftClippedStart > 0 || SoftClippedEnd > 0; }
 
-    public final boolean containsIndel() { return !mIndels.isEmpty(); }
+    public final boolean containsValidIndel_() { return !mValidIndels_.isEmpty(); }
 
     public void populateCodingRegion(final char[] readBases, final byte[] readQuals, boolean reverseCompliment)
     {
-        Set<Integer> ultimaLowQualIndices = isUltima() ? Sets.newHashSet(extractLowQualIndices(mRecord)) : null;
+        Set<Integer> ultimaLowQualIndices = isUltima() ? Sets.newHashSet(extractLowQualIndices_(mRecord)) : null;
         if(reverseCompliment)
         {
             int index = readBases.length - 1;
@@ -167,7 +172,12 @@ public class Read
                 softClipEnd = 0;
         }
 
+        // TODO: trimming
         int lowQualTrimmedBases = findLowQualTrimmedBases(record);
+//        int lowQualTrimmedBases = 0;
+
+        // TODO: remove
+        System.out.println(format("@@@ %d,%d", lowQualTrimmedBases, record.getReadBases().length));
 
         if(lowQualTrimmedBases > 0)
         {
@@ -237,16 +247,17 @@ public class Read
         int softClippedStart = max(alignmentStart - positionStart, 0);
         int softClippedEnd = max(0, positionEnd - alignmentEnd);
 
-        List<Indel> indels = includeIndels ? indels(positionStart, positionEnd, record) : Lists.newArrayList();
+        List<Indel> indels_ = includeIndels ? indels_(positionStart, positionEnd, record) : Lists.newArrayList();
 
         return new Read(
-                record.getReadName(), softClippedStart, softClippedEnd, indels,
+                record.getReadName(), softClippedStart, softClippedEnd, indels_,
                 positionStart, positionEnd, readIndexStart, readIndexEnd, record, lowQualTrimmedBases);
     }
 
-    private static List<Indel> indels(int startPosition, int endPosition, final SAMRecord record)
+    private static List<Indel> indels_(int startPosition, int endPosition, final SAMRecord record)
     {
-        List<Indel> indels = Lists.newArrayList();
+        final List<Indel> indels_ = Lists.newArrayList();
+        final Set<Integer> ultimaLowQualIndices = isUltima() ? Sets.newHashSet(extractLowQualIndices_(record)) : null;
 
         CigarHandler cigarHandler = new CigarHandler()
         {
@@ -255,28 +266,59 @@ public class Read
                 if(startPosition <= refPosition && refPosition <= endPosition)
                 {
                     char baseChar = record.getReadString().charAt(readIndex);
-                    indels.add(new Indel(record.getContig(), refPosition, String.valueOf(baseChar),
-                            record.getReadString().substring(readIndex, readIndex + element.getLength() + 1)));
+                    boolean ignore = false;
+                    if(isUltima() || isSbx())
+                    {
+                        for(int i = readIndex + 1; i <= readIndex + element.getLength(); i++)
+                        {
+                            // TODO: do we need to use different quals for sbx?
+                            boolean isLowQual = ultimaLowQualIndices != null ? ultimaLowQualIndices.contains(i) : belowMinQual(record.getBaseQualities()[i]);
+                            if(isLowQual)
+                            {
+                                ignore = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // TODO: ignore all indels
+//                    ignore = true;
+
+                    indels_.add(Indel.create__(record.getContig(), refPosition, readIndex, String.valueOf(baseChar),
+                            record.getReadString().substring(readIndex, readIndex + element.getLength() + 1), ignore));
                 }
             }
 
-            public void handleDelete(final SAMRecord record, final CigarElement element, int readIndex, int refPosition) {
-
+            public void handleDelete(final SAMRecord record, final CigarElement element, int readIndex, int refPosition)
+            {
                 if(startPosition <= refPosition && refPosition <= endPosition)
                 {
                     char baseChar = record.getReadString().charAt(readIndex);
-                    String delBases = String.valueOf(baseChar);
+                    int delPosStart = refPosition + 1;
+                    int delPosEnd = delPosStart + element.getLength() - 1;
+                    String delBases = String.valueOf(baseChar) + refBases(delPosStart, delPosEnd);
+                    boolean ignore = false;
+                    // TODO: do we need to use different quals for sbx?
+                    if(isUltima() || isSbx())
+                    {
+                        int leftIndex = readIndex;
+                        boolean isLeftLowQual = ultimaLowQualIndices != null ? ultimaLowQualIndices.contains(leftIndex) : belowMinQual(record.getBaseQualities()[leftIndex]);
+                        int rightIndex = leftIndex + 1;
+                        boolean isRightLowQual = ultimaLowQualIndices != null ? ultimaLowQualIndices.contains(rightIndex) : belowMinQual(record.getBaseQualities()[rightIndex]);
+                        if(isLeftLowQual || isRightLowQual)
+                            ignore = true;
+                    }
 
-                    for(int i = 0; i < element.getLength(); ++i)
-                        delBases += "N";
+                    // TODO: ignore all indels
+//                    ignore = true;
 
-                    indels.add(new Indel(record.getContig(), refPosition, delBases, String.valueOf(baseChar)));
+                    indels_.add(Indel.create__(record.getContig(), refPosition, readIndex, delBases, String.valueOf(baseChar), ignore));
                 }
             }
         };
 
         CigarHandler.traverseCigar(record, cigarHandler);
-        return indels;
+        return indels_;
     }
 
     private static int findLowQualTrimmedBases(final SAMRecord record)
@@ -288,7 +330,7 @@ public class Read
         double currentScore = 0;
         int lastLowestScoreIndex = -1;
 
-        Set<Integer> ultimaLowQualIndices = isUltima() ? Sets.newHashSet(extractLowQualIndices(record)) : null;
+        Set<Integer> ultimaLowQualIndices = isUltima() ? Sets.newHashSet(extractLowQualIndices_(record)) : null;
         while(baseIndex >= 0 && baseIndex < record.getReadBases().length)
         {
             boolean isLowQual = ultimaLowQualIndices != null ? ultimaLowQualIndices.contains(baseIndex) : belowMinQual(record.getBaseQualities()[baseIndex]);

@@ -15,13 +15,13 @@ public class MockBamReader implements BamReader
 {
     public final List<Fragment> Fragments;
     public final List<Fragment> VariantFragments;
-    public final Map<Indel,List<Fragment>> StopLossFragments;
+    public final Map<Indel,List<Fragment>> StopLossFragments_;
 
     public MockBamReader()
     {
         Fragments = Lists.newArrayList();
         VariantFragments = Lists.newArrayList();
-        StopLossFragments = Maps.newHashMap();
+        StopLossFragments_ = Maps.newHashMap();
     }
 
     public List<Fragment> findGeneFragments() { return Fragments; }
@@ -29,7 +29,7 @@ public class MockBamReader implements BamReader
     public List<Fragment> findVariantFragments(final SomaticVariant variant) { return VariantFragments; }
 
     // metrics
-    public Map<Indel,List<Fragment>> getKnownStopLossFragments() { return StopLossFragments; }
+    public Map<Indel,List<Fragment>> getKnownStopLossFragments() { return StopLossFragments_; }
     public Map<Indel,Integer> unmatchedPonIndels(int minCount) { return Maps.newHashMap(); }
     public Map<Indel,Integer> unmatchedIndels(int minCount) { return Maps.newHashMap(); }
     public int filteredReadCount() { return 0; }

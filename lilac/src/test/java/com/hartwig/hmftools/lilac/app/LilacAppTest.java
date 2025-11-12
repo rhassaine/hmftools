@@ -6,7 +6,7 @@ import static com.hartwig.hmftools.lilac.LilacConstants.STOP_LOSS_ON_C_ALLELE;
 import static com.hartwig.hmftools.lilac.LilacConstants.WARN_LOW_COVERAGE_THRESHOLD;
 import static com.hartwig.hmftools.lilac.ReferenceData.GENE_CACHE;
 import static com.hartwig.hmftools.lilac.ReferenceData.GENE_EXON_BOUNDARIES;
-import static com.hartwig.hmftools.lilac.ReferenceData.STOP_LOSS_ON_C_INDEL;
+import static com.hartwig.hmftools.lilac.ReferenceData.STOP_LOSS_ON_C_INDEL_;
 import static com.hartwig.hmftools.lilac.ReferenceData.loadHlaTranscripts;
 import static com.hartwig.hmftools.lilac.hla.HlaGene.HLA_A;
 import static com.hartwig.hmftools.lilac.hla.HlaGene.HLA_B;
@@ -193,7 +193,7 @@ public class LilacAppTest
         List<Fragment> stopLossFrags = createFragments(refData, c3, 20, 900, 1090, length, gap);
         refBamReader.Fragments.addAll(stopLossFrags);
         refBamReader.Fragments.addAll(createFragments(refData, c3, fragCount, startLoci, endLoci, length, gap));
-        refBamReader.StopLossFragments.put(STOP_LOSS_ON_C_INDEL, stopLossFrags);
+        refBamReader.StopLossFragments_.put(STOP_LOSS_ON_C_INDEL_, stopLossFrags);
 
         lilac.run();
 
