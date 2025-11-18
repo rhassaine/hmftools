@@ -6,7 +6,8 @@ import java.util.List;
 import com.google.common.collect.Lists;
 import com.hartwig.hmftools.esvee.assembly.alignment.Aligner;
 
-import org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment;
+// import org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment;
+import org.umccr.java.hellbender.utils.bwa.BwaMemAlignment;
 
 public class MockAligner implements Aligner
 {

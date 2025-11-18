@@ -7,8 +7,10 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Stream;
 
-import org.broadinstitute.hellbender.utils.bwa.BwaMemAligner;
-import org.broadinstitute.hellbender.utils.bwa.BwaMemIndex;
+// import org.broadinstitute.hellbender.utils.bwa.BwaMemAligner;
+// import org.broadinstitute.hellbender.utils.bwa.BwaMemIndex;
+import org.umccr.java.hellbender.utils.bwa.BwaMemAligner;
+import org.umccr.java.hellbender.utils.bwa.BwaMemIndex;
 
 public class Utils
 {

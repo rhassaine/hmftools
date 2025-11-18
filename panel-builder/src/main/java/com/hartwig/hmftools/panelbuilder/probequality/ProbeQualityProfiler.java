@@ -2,10 +2,10 @@ package com.hartwig.hmftools.panelbuilder.probequality;
 
 import static java.lang.String.format;
 
-import static com.hartwig.hmftools.common.bwa.BwaUtils.BWA_LIB_PATH;
-import static com.hartwig.hmftools.common.bwa.BwaUtils.BWA_LIB_PATH_DESC;
-import static com.hartwig.hmftools.common.bwa.BwaUtils.LIBBWA_PATH;
-import static com.hartwig.hmftools.common.bwa.BwaUtils.loadAlignerLibrary;
+// import static com.hartwig.hmftools.common.bwa.BwaUtils.BWA_LIB_PATH;
+// import static com.hartwig.hmftools.common.bwa.BwaUtils.BWA_LIB_PATH_DESC;
+// import static com.hartwig.hmftools.common.bwa.BwaUtils.LIBBWA_PATH;
+// import static com.hartwig.hmftools.common.bwa.BwaUtils.loadAlignerLibrary;
 import static com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource.REF_GENOME;
 import static com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource.addRefGenomeFile;
 import static com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource.loadRefGenome;
@@ -35,7 +35,8 @@ import com.hartwig.hmftools.common.utils.config.ConfigBuilder;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.broadinstitute.hellbender.utils.bwa.BwaMemAligner;
+// import org.broadinstitute.hellbender.utils.bwa.BwaMemAligner;
+import org.umccr.java.hellbender.utils.bwa.BwaMemAligner;
 
 // Tool for helping with panel probe design. It produces a file which annotates the genome with information informing how likely a probe is
 // to hybridise with off-target genome regions.
@@ -148,8 +149,8 @@ public class ProbeQualityProfiler
         }
         LOGGER.debug("Threads: {}", threads);
 
-        loadAlignerLibrary(configBuilder.getValue(BWA_LIB_PATH));
-        LOGGER.debug("BWA-MEM library path: {}", System.getProperty(LIBBWA_PATH));
+        // loadAlignerLibrary(configBuilder.getValue(BWA_LIB_PATH));
+        // LOGGER.debug("BWA-MEM library path: {}", System.getProperty(LIBBWA_PATH));
 
         String bwaIndexImageFile = configBuilder.getValue(BWA_INDEX_IMAGE_FILE_CONFIG, refGenomePath + ".img");
         LOGGER.debug("BWA-MEM index image: {}", bwaIndexImageFile);
@@ -308,7 +309,7 @@ public class ProbeQualityProfiler
 
         configBuilder.addPath(BWA_INDEX_IMAGE_FILE_CONFIG, false, BWA_INDEX_IMAGE_FILE_DESC);
 
-        configBuilder.addPath(BWA_LIB_PATH, false, BWA_LIB_PATH_DESC);
+        // configBuilder.addPath(BWA_LIB_PATH, false, BWA_LIB_PATH_DESC);
 
         configBuilder.addInteger(BASE_WINDOW_LENGTH_CONFIG, BASE_WINDOW_LENGTH_DESC, BASE_WINDOW_LENGTH_DEFAULT);
         configBuilder.addInteger(BASE_WINDOW_SPACING_CONFIG, BASE_WINDOW_SPACING_DESC, BASE_WINDOW_SPACING_DEFAULT);

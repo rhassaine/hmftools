@@ -9,8 +9,10 @@ import com.hartwig.hmftools.common.genome.region.Strand
 import htsjdk.samtools.SAMSequenceDictionary
 import htsjdk.samtools.reference.ReferenceSequenceFileFactory
 import org.apache.logging.log4j.LogManager
-import org.broadinstitute.hellbender.utils.bwa.BwaMemAligner
-import org.broadinstitute.hellbender.utils.bwa.BwaMemIndex
+// import org.broadinstitute.hellbender.utils.bwa.BwaMemAligner
+// import org.broadinstitute.hellbender.utils.bwa.BwaMemIndex
+import org.umccr.java.hellbender.utils.bwa.BwaMemAligner
+import org.umccr.java.hellbender.utils.bwa.BwaMemIndex
 import java.io.FileInputStream
 import java.io.InputStream
 import kotlin.io.path.createTempFile
@@ -171,7 +173,8 @@ object AlignmentUtil
     }
 
     private fun parseBwaMemAlignments(sequences: List<String>,
-                                      alignments: List<List<org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment>>,
+                                    //   alignments: List<List<org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment>>,
+                                      alignments: List<List<org.umccr.java.hellbender.utils.bwa.BwaMemAlignment>>,
                                       refGenSeqDict: SAMSequenceDictionary): List<List<Alignment>>
     {
         require(sequences.size == alignments.size)
@@ -180,7 +183,8 @@ object AlignmentUtil
                 queryAlignments.mapNotNull { parseBwaMemAlignment(querySeq, it, refGenSeqDict) } }
     }
 
-    private fun parseBwaMemAlignment(querySeq: String, alignment: org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment,
+    // private fun parseBwaMemAlignment(querySeq: String, alignment: org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment,
+    private fun parseBwaMemAlignment(querySeq: String, alignment: org.umccr.java.hellbender.utils.bwa.BwaMemAlignment,
                                      refGenSeqDict: SAMSequenceDictionary)
         : Alignment?
     {

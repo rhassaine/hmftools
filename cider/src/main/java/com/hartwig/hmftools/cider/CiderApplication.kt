@@ -11,7 +11,7 @@ import com.hartwig.hmftools.cider.primer.PrimerTsvFile
 import com.hartwig.hmftools.cider.primer.VdjPrimerMatch
 import com.hartwig.hmftools.cider.primer.VdjPrimerMatchTsv
 import com.hartwig.hmftools.cider.primer.VdjPrimerMatcher
-import com.hartwig.hmftools.common.bwa.BwaUtils.loadAlignerLibrary
+// import com.hartwig.hmftools.common.bwa.BwaUtils.loadAlignerLibrary
 import com.hartwig.hmftools.common.genome.region.GenomeRegion
 import com.hartwig.hmftools.common.genome.region.GenomeRegions
 import com.hartwig.hmftools.common.perf.PerformanceCounter.runTimeMinsStr
@@ -95,7 +95,7 @@ class CiderApplication(configBuilder: ConfigBuilder)
             // we need to filter out VDJ sequences that already match reference. In this version we avoid running alignment on those
             val filteredVdjs = vdjSequences.filter { vdj -> !vdjAnnotator.vdjMatchesRef(vdj) }
 
-            loadAlignerLibrary(mParams.bwaLibPath)
+            // loadAlignerLibrary(mParams.bwaLibPath)
 
             val refGenomeDictPath = "${mParams.refGenomePath}.dict"
             val alignmentAnnotator = AlignmentAnnotator(

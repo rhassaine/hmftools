@@ -11,8 +11,10 @@ import java.util.stream.Stream;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.broadinstitute.hellbender.utils.bwa.BwaMemAligner;
-import org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment;
+// import org.broadinstitute.hellbender.utils.bwa.BwaMemAligner;
+// import org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment;
+import org.umccr.java.hellbender.utils.bwa.BwaMemAligner;
+import org.umccr.java.hellbender.utils.bwa.BwaMemAlignment;
 
 // Evaluates the off-target risk of a probe given its alignments from BWA.
 public class ProbeQualityModel

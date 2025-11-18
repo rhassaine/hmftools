@@ -54,7 +54,8 @@ import com.hartwig.hmftools.esvee.assembly.types.AssemblyLink;
 import com.hartwig.hmftools.esvee.assembly.types.JunctionAssembly;
 import com.hartwig.hmftools.esvee.assembly.types.LinkType;
 
-import org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment;
+// import org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment;
+import org.umccr.java.hellbender.utils.bwa.BwaMemAlignment;
 import org.junit.Test;
 
 public class AlignmentTest

@@ -3,7 +3,7 @@ package com.hartwig.hmftools.panelbuilder;
 import static java.lang.System.exit;
 import static java.util.Objects.requireNonNull;
 
-import static com.hartwig.hmftools.common.bwa.BwaUtils.loadAlignerLibrary;
+// import static com.hartwig.hmftools.common.bwa.BwaUtils.loadAlignerLibrary;
 import static com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource.deriveRefGenomeVersion;
 import static com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource.loadRefGenome;
 import static com.hartwig.hmftools.common.perf.PerformanceCounter.runTimeMinsStr;
@@ -27,7 +27,8 @@ import com.hartwig.hmftools.panelbuilder.samplevariants.SampleVariants;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.broadinstitute.hellbender.utils.bwa.BwaMemAligner;
+// import org.broadinstitute.hellbender.utils.bwa.BwaMemAligner;
+import org.umccr.java.hellbender.utils.bwa.BwaMemAligner;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -52,7 +53,7 @@ public class PanelBuilderApplication
         mRefGenomeVersion = deriveRefGenomeVersion(refGenomeSource);
 
         ProbeQualityProfile probeQualityProfile = ProbeQualityProfile.loadFromResourceFile(mConfig.probeQualityProfileFile());
-        loadAlignerLibrary(mConfig.bwaLibPath());
+        // loadAlignerLibrary(mConfig.bwaLibPath());
         Supplier<BwaMemAligner> alignerFactory = () -> createBwaMemAligner(mConfig.bwaIndexImageFile(), 1);
         ProbeQualityModel probeQualityModel = new ProbeQualityModel(alignerFactory, PROBE_LENGTH,
                 probeQualityProfile.matchScoreThreshold(), probeQualityProfile.matchScoreOffset());

@@ -1,6 +1,6 @@
 package com.hartwig.hmftools.cider
 
-import com.hartwig.hmftools.common.bwa.BwaUtils
+// import com.hartwig.hmftools.common.bwa.BwaUtils
 import com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource
 import com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource.addRefGenomeFile
 import com.hartwig.hmftools.common.genome.refgenome.RefGenomeVersion
@@ -27,7 +27,7 @@ data class CiderParams(
     val maxReadCountPerGene: Int,
     val primerCsv: String?,
     val primerMismatchMax: Int,
-    val bwaLibPath: String?,
+    // val bwaLibPath: String?,
     val bwaIndexImagePath: String?
 )
 {
@@ -71,7 +71,7 @@ data class CiderParams(
                 maxReadCountPerGene = configBuilder.getInteger(ARG_MAX_READS_PER_GENE),
                 primerCsv = configBuilder.getValue(ARG_PRIMER_CSV),
                 primerMismatchMax = configBuilder.getInteger(ARG_PRIMER_MISMATCH_MAX),
-                bwaLibPath = configBuilder.getValue(BwaUtils.BWA_LIB_PATH),
+                // bwaLibPath = configBuilder.getValue(BwaUtils.BWA_LIB_PATH),
                 bwaIndexImagePath = configBuilder.getValue(ARG_BWA_INDEX_IMAGE, defaultBwaIndex)
             )
         }
@@ -105,7 +105,7 @@ data class CiderParams(
                 "Maximum number of mismatch bases for matching primer sequence",
                 0
             )
-            configBuilder.addPath(BwaUtils.BWA_LIB_PATH, false, BwaUtils.BWA_LIB_PATH_DESC)
+            // configBuilder.addPath(BwaUtils.BWA_LIB_PATH, false, BwaUtils.BWA_LIB_PATH_DESC)
             configBuilder.addPath(ARG_BWA_INDEX_IMAGE, false, "Reference genome BWA-MEM index GATK image file")
         }
     }

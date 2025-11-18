@@ -1,7 +1,7 @@
 package com.hartwig.hmftools.panelbuilder;
 
-import static com.hartwig.hmftools.common.bwa.BwaUtils.BWA_LIB_PATH;
-import static com.hartwig.hmftools.common.bwa.BwaUtils.BWA_LIB_PATH_DESC;
+// import static com.hartwig.hmftools.common.bwa.BwaUtils.BWA_LIB_PATH;
+// import static com.hartwig.hmftools.common.bwa.BwaUtils.BWA_LIB_PATH_DESC;
 import static com.hartwig.hmftools.common.ensemblcache.EnsemblDataCache.ENSEMBL_DATA_DIR;
 import static com.hartwig.hmftools.common.ensemblcache.EnsemblDataCache.addEnsemblDir;
 import static com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource.REF_GENOME;
@@ -26,7 +26,7 @@ public record PanelBuilderConfig(
         @Nullable String ensemblDir,
         String probeQualityProfileFile,
         String bwaIndexImageFile,
-        @Nullable String bwaLibPath,
+        // @Nullable String bwaLibPath,
         @Nullable String genesFile,
         boolean includeCnBackbone,
         @Nullable String amberSitesFile,
@@ -67,7 +67,7 @@ public record PanelBuilderConfig(
                 configBuilder.getValue(ENSEMBL_DATA_DIR),
                 configBuilder.getValue(CFG_PROBE_QUALITY_FILE),
                 configBuilder.getValue(CFG_BWA_INDEX_IMAGE_FILE, refGenomePath + ".img"),
-                configBuilder.getValue(BWA_LIB_PATH),
+                // configBuilder.getValue(BWA_LIB_PATH),
                 configBuilder.getValue(CFG_TARGET_GENES_FILE),
                 configBuilder.hasFlag(CFG_INCLUDE_CN_BACKBONE),
                 configBuilder.getValue(CFG_AMBER_SITES_FILE),
@@ -87,7 +87,7 @@ public record PanelBuilderConfig(
         addRefGenomeFile(configBuilder, true);
         addEnsemblDir(configBuilder, false);
         ProbeQualityProfile.registerConfig(configBuilder);
-        configBuilder.addPath(BWA_LIB_PATH, false, BWA_LIB_PATH_DESC);
+        // configBuilder.addPath(BWA_LIB_PATH, false, BWA_LIB_PATH_DESC);
         configBuilder.addPath(CFG_BWA_INDEX_IMAGE_FILE, false, DESC_BWA_INDEX_IMAGE_FILE);
 
         configBuilder.addFlag(CFG_INCLUDE_CN_BACKBONE, DESC_INCLUDE_CN_BACKBONE);
