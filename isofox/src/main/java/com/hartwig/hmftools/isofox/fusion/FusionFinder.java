@@ -9,7 +9,7 @@ import static com.hartwig.hmftools.common.sv.StartEndIterator.SE_END;
 import static com.hartwig.hmftools.common.sv.StartEndIterator.SE_START;
 import static com.hartwig.hmftools.common.sv.StartEndIterator.switchIndex;
 import static com.hartwig.hmftools.isofox.IsofoxConfig.ISF_LOGGER;
-import static com.hartwig.hmftools.isofox.common.ReadRecord.NO_GENE_ID;
+import static com.hartwig.hmftools.isofox.common.Read.NO_GENE_ID;
 import static com.hartwig.hmftools.isofox.common.TransExonRef.hasMatchWithinRange;
 import static com.hartwig.hmftools.isofox.fusion.FusionConstants.HIGH_LOG_COUNT;
 import static com.hartwig.hmftools.isofox.fusion.FusionFragmentType.DISCORDANT;
@@ -279,7 +279,7 @@ public class FusionFinder implements Callable<Void>
         String scope = isInterChromosomal ? "inter-chromosome" : "local";
 
         // first turn them into fragments, then look for fusions
-        Level logLevel = isInterChromosomal ? Level.INFO : Level.DEBUG;
+        Level logLevel = isInterChromosomal ? Level.DEBUG : Level.TRACE;
         ISF_LOGGER.log(logLevel, "chr({}) processing {} {} chimeric read groups", mChromosome, readGroups.size(), scope);
 
         int readGroupCount = 0;
@@ -392,7 +392,7 @@ public class FusionFinder implements Callable<Void>
             }
         }
 
-        Level level = mAllFragments.size() > HIGH_LOG_COUNT ? Level.INFO : Level.DEBUG;
+        Level level = mAllFragments.size() > HIGH_LOG_COUNT ? Level.DEBUG : Level.TRACE;
         ISF_LOGGER.log(level, "chr({}) chimeric fragments({} disc={} junc={}) fusions(loc={} total={})",
                 mChromosome, mAllFragments.size(), mDiscordantFragments.values().stream().mapToInt(x -> x.size()).sum(),
                 junctioned, mFusionCandidates.size(), mFusionCandidates.values().stream().mapToInt(x -> x.size()).sum());
@@ -487,8 +487,8 @@ public class FusionFinder implements Callable<Void>
     private void setGeneData(final FusionReadData fusionData)
     {
         // get the genes supporting the splice junction in the terms of an SV (ie lower chromosome and lower position first)
-        final List<GeneData>[] genesByPosition = new List[] { Lists.newArrayList(), Lists.newArrayList() };
-        final List<TranscriptData>[] validTransDataList = new List[] { Lists.newArrayList(), Lists.newArrayList() };
+        List<GeneData>[] genesByPosition = new List[] { Lists.newArrayList(), Lists.newArrayList() };
+        List<TranscriptData>[] validTransDataList = new List[] { Lists.newArrayList(), Lists.newArrayList() };
 
         FusionFragment initialFragment = fusionData.getInitialFragment();
 
@@ -519,7 +519,7 @@ public class FusionFinder implements Callable<Void>
                     transDataList.add(transData);
 
                 fusionData.getTransExonRefsByPos(se).add(new TransExonRef(
-                        transData.GeneId, transData.TransId, transData.TransName, transExonRef.ExonRank));
+                        transData.GeneId, transData.TransId, transData.TransName, transExonRef.ExonRank, transData.IsCanonical));
 
                 spliceGeneIds.add(transData.GeneId);
             }
@@ -1071,7 +1071,7 @@ public class FusionFinder implements Callable<Void>
 
             for(List<FusionReadData> fusionCandidates : mFusionCandidates.values())
             {
-                for(final FusionReadData fusion : fusionCandidates)
+                for(FusionReadData fusion : fusionCandidates)
                 {
                     FusionData fusionData = fusion.toFusionData();
                     allFusions.add(fusionData);
@@ -1080,7 +1080,11 @@ public class FusionFinder implements Callable<Void>
 
             List<FusionData> passingFusions = mPassingFusions.findPassingFusions(allFusions);
 
-            ISF_LOGGER.debug("chr({}) passing fusions({}) from total({})", mChromosome, passingFusions.size(), allFusions.size());
+            if(!passingFusions.isEmpty())
+            {
+                ISF_LOGGER.debug("chr({}) passing fusions({}) from total({})",
+                        mChromosome, passingFusions.size(), allFusions.size());
+            }
 
             mFusionWriter.writeFusionData(allFusions, passingFusions, mFusionCandidates);
         }

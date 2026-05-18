@@ -3,8 +3,8 @@ package com.hartwig.hmftools.qsee.prep.category;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
-import static com.hartwig.hmftools.qsee.prep.category.BaseQualRecalibrationPrep.calcChangeInQualPerOriginalQual;
-import static com.hartwig.hmftools.qsee.prep.category.BaseQualRecalibrationPrep.calcChangeInQualPerTrinucContext;
+import static com.hartwig.hmftools.qsee.prep.category.BaseQualRecalibrationPrep.aggregateChangeInQualPerOriginalQual;
+import static com.hartwig.hmftools.qsee.prep.category.BaseQualRecalibrationPrep.aggregateChangeInQualPerTrinucContext;
 
 import java.util.List;
 
@@ -14,8 +14,8 @@ import com.hartwig.hmftools.common.redux.BqrKey;
 import com.hartwig.hmftools.common.redux.BqrRecord;
 import com.hartwig.hmftools.common.sequencing.SequencingType;
 import com.hartwig.hmftools.qsee.feature.Feature;
-import com.hartwig.hmftools.qsee.prep.bqr.BaseQualBin;
-import com.hartwig.hmftools.qsee.prep.bqr.BaseQualBinner;
+import com.hartwig.hmftools.qsee.prep.category.bqr.BaseQualBin;
+import com.hartwig.hmftools.qsee.prep.category.bqr.BaseQualBinner;
 
 import org.junit.Test;
 
@@ -44,7 +44,7 @@ public class BaseQualRecalibrationPrepTest
     @Test
     public void canStandardiseBases()
     {
-        // Already standard: should remain unchanged
+        // Already standard bases: no need to reverse complement
         BqrRecord record1 = createBqrRecord(ConsensusType.NONE, 'C', 'A', "ACC",
                 0, 0, 0);
 
@@ -52,7 +52,7 @@ public class BaseQualRecalibrationPrepTest
         assertEquals('A', record1.Key.Alt);
         assertEquals("ACC", new String(record1.Key.TrinucleotideContext));
 
-        // Not standard: should be reverse complemented
+        // Not standard bases: should be reverse complemented
         BqrRecord record2 = createBqrRecord(ConsensusType.NONE, 'G', 'T', "GGA",
                 0, 0, 0);
 
@@ -76,40 +76,40 @@ public class BaseQualRecalibrationPrepTest
     }
 
     @Test
-    public void canCalcChangeInQualPerTrinucContext()
+    public void canAggregateChangeInQualPerTrinucContext()
     {
         BaseQualBinner baseQualBinner = new BaseQualBinner(SequencingType.ILLUMINA);
-        List<Feature> features = calcChangeInQualPerTrinucContext(BQR_RECORDS, baseQualBinner);
+        List<Feature> features = aggregateChangeInQualPerTrinucContext(BQR_RECORDS, baseQualBinner);
 
         assertEquals(2, features.size());
 
         Feature actualFeature;
 
         actualFeature = features.get(0);
-        assertEquals("ReadType=NONE;StandardMutation=C>A;StandardTrinucContext=CCC;OriginalQualBin=HIGH (30+)", actualFeature.key().name());
+        assertEquals("ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:CCC;OriginalQualBin:HIGH (30+)", actualFeature.key().name());
         assertEquals(1.205, actualFeature.value(), 0.001);
 
         actualFeature = features.get(1);
-        assertEquals("ReadType=NONE;StandardMutation=C>A;StandardTrinucContext=ACA;OriginalQualBin=HIGH (30+)", actualFeature.key().name());
+        assertEquals("ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:ACA;OriginalQualBin:HIGH (30+)", actualFeature.key().name());
         assertEquals(3.386, actualFeature.value(), 0.001);
     }
 
     @Test
-    public void canCalcChangeInQualPerOriginalQual()
+    public void canAggregateChangeInQualPerOriginalQual()
     {
         BaseQualBinner baseQualBinner = new BaseQualBinner(SequencingType.ILLUMINA);
-        List<Feature> features = calcChangeInQualPerOriginalQual(BQR_RECORDS, baseQualBinner);
+        List<Feature> features = aggregateChangeInQualPerOriginalQual(BQR_RECORDS, baseQualBinner);
 
         assertEquals(2, features.size());
 
         Feature actualFeature;
 
         actualFeature = features.get(0);
-        assertEquals("ReadType=DUAL;StandardMutation=C>G;OriginalQualBin=LOW (0-29)", actualFeature.key().name());
+        assertEquals("ReadType:DUAL;StandardMutation:C>G;OriginalQualBin:LOW (0-29)", actualFeature.key().name());
         assertEquals(1.659, actualFeature.value(), 0.001);
 
         actualFeature = features.get(1);
-        assertEquals("ReadType=NONE;StandardMutation=C>A;OriginalQualBin=HIGH (30+)", actualFeature.key().name());
+        assertEquals("ReadType:NONE;StandardMutation:C>A;OriginalQualBin:HIGH (30+)", actualFeature.key().name());
         assertEquals(2.295, actualFeature.value(), 0.001);
     }
 

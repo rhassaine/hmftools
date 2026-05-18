@@ -1,53 +1,80 @@
 package com.hartwig.hmftools.panelbuilder;
 
+import static java.util.Collections.emptyList;
+
 import static com.hartwig.hmftools.panelbuilder.ProbeUtils.probeTargetedRegions;
 import static com.hartwig.hmftools.panelbuilder.RegionUtils.mergeOverlapAndAdjacentRegions;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.hartwig.hmftools.common.region.ChrBaseRegion;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
 // Holds the panel output data, including probes, target regions, and rejected features.
 // It's a mutable data structure because it's also used during probe generation to check which regions are already covered.
-public class PanelData implements PanelCoverage
+public class PanelData implements PanelBuffer
 {
-    private ProbeGenerationResult mData;
-
-    private static final Logger LOGGER = LogManager.getLogger(PanelData.class);
+    private final List<Probe> mProbes;
+    private final List<TargetRegion> mCandidateTargetRegions;
+    private final List<RejectedFeature> mRejectedFeatures;
+    private final Map<String, List<ChrBaseRegion>> mCoveredRegionsCache = new HashMap<>();
 
     public PanelData()
     {
-        mData = new ProbeGenerationResult();
+        mProbes = new ArrayList<>();
+        mCandidateTargetRegions = new ArrayList<>();
+        mRejectedFeatures = new ArrayList<>();
     }
 
     @Override
     public Stream<ChrBaseRegion> coveredRegions()
     {
-        return mData.probes().stream().flatMap(probe -> probe.definition().regions().stream());
+        return mCoveredRegionsCache.values().stream().flatMap(List::stream);
     }
 
+    @Override
+    public Stream<ChrBaseRegion> coveredRegions(final String chromosome)
+    {
+        return mCoveredRegionsCache.getOrDefault(chromosome, emptyList()).stream();
+    }
+
+    @Override
     public void addResult(final ProbeGenerationResult result)
     {
-        result.probes().forEach(probe ->
+        for(Probe probe : result.probes())
         {
             if(!probe.accepted())
             {
                 throw new IllegalArgumentException("Should only add accepted probes to the panel");
             }
-        });
-        LOGGER.debug("Adding to panel: probes={} candidateTargetRegions={} rejectedFeatures={}",
-                result.probes().size(), result.candidateTargetRegions().size(), result.rejectedFeatures().size());
-        mData = mData.add(result);
+        }
+
+        mProbes.addAll(result.probes());
+        mCandidateTargetRegions.addAll(result.candidateTargetRegions());
+        mRejectedFeatures.addAll(result.rejectedFeatures());
+
+        for(Probe probe : result.probes())
+        {
+            for(ChrBaseRegion region : probe.definition().regions())
+            {
+                List<ChrBaseRegion> regions = mCoveredRegionsCache.get(region.chromosome());
+                if(regions == null)
+                {
+                    regions = new ArrayList<>();
+                    mCoveredRegionsCache.put(region.chromosome(), regions);
+                }
+                regions.add(region);
+            }
+        }
     }
 
     public List<Probe> probes()
     {
-        return mData.probes();
+        return mProbes;
     }
 
     // All the target regions, regardless of how they were covered by probes.
@@ -55,7 +82,7 @@ public class PanelData implements PanelCoverage
     // source type.
     public List<TargetRegion> candidateTargetRegions()
     {
-        return mData.candidateTargetRegions();
+        return mCandidateTargetRegions;
     }
 
     // The target regions which the probes aim to hit. This is the intersection of the probe and its target region.
@@ -63,7 +90,7 @@ public class PanelData implements PanelCoverage
     {
         // Merge adjacent/overlapping target regions which have the same metadata.
         // If multiple target regions with different metadata overlap, there will be overlapping output regions.
-        return mData.probes().stream()
+        return mProbes.stream()
                 .collect(Collectors.groupingBy(Probe::metadata)).entrySet().stream()
                 .flatMap(entry ->
                         mergeOverlapAndAdjacentRegions(entry.getValue().stream()
@@ -75,6 +102,6 @@ public class PanelData implements PanelCoverage
 
     public List<RejectedFeature> rejectedFeatures()
     {
-        return mData.rejectedFeatures();
+        return mRejectedFeatures;
     }
 }

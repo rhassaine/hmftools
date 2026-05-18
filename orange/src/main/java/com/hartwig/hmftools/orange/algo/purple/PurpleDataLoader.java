@@ -1,52 +1,177 @@
 package com.hartwig.hmftools.orange.algo.purple;
 
+import static com.hartwig.hmftools.common.linx.LinxCommonTypes.SV_VIS_CLUSTER_PREFIX;
+import static com.hartwig.hmftools.common.purple.PurpleCommon.PURPLE_PLOT_COPY_NUMBER;
+import static com.hartwig.hmftools.common.purple.PurpleCommon.PURPLE_PLOT_FINAL_CIRCOS;
+import static com.hartwig.hmftools.common.purple.PurpleCommon.PURPLE_PLOT_INPUT_CIRCOS;
+import static com.hartwig.hmftools.common.purple.PurpleCommon.PURPLE_PLOT_MINOR_ALLELE;
+import static com.hartwig.hmftools.common.purple.PurpleCommon.PURPLE_PLOT_PURITY_RANGE;
+import static com.hartwig.hmftools.common.purple.PurpleCommon.PURPLE_PLOT_SOMATIC_CLONALITY;
+import static com.hartwig.hmftools.common.purple.PurpleCommon.PURPLE_PLOT_SOMATIC_CN;
+import static com.hartwig.hmftools.common.purple.PurpleCommon.PURPLE_PLOT_SOMATIC_RAINFALL;
+import static com.hartwig.hmftools.common.purple.PurpleCommon.purplePlotFile;
+import static com.hartwig.hmftools.orange.OrangeApplication.LOGGER;
+
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.google.common.collect.Lists;
 import com.hartwig.hmftools.common.driver.DriverCatalog;
 import com.hartwig.hmftools.common.driver.DriverCatalogFile;
 import com.hartwig.hmftools.common.driver.panel.DriverGene;
+import com.hartwig.hmftools.common.pipeline.MiscToolFiles;
+import com.hartwig.hmftools.common.purple.ChrArmCopyNumber;
+import com.hartwig.hmftools.common.purple.ChrArmCopyNumbersFile;
 import com.hartwig.hmftools.common.purple.GeneCopyNumber;
 import com.hartwig.hmftools.common.purple.GeneCopyNumberFile;
 import com.hartwig.hmftools.common.purple.GermlineAmpDel;
 import com.hartwig.hmftools.common.purple.PurityContext;
 import com.hartwig.hmftools.common.purple.PurityContextFile;
 import com.hartwig.hmftools.common.purple.PurpleCommon;
-import com.hartwig.hmftools.common.purple.PurpleCopyNumberFile;
 import com.hartwig.hmftools.common.purple.PurplePurity;
 import com.hartwig.hmftools.common.purple.PurpleQCFile;
+import com.hartwig.hmftools.common.purple.ReportedStatus;
 import com.hartwig.hmftools.common.variant.CommonVcfTags;
-import com.hartwig.hmftools.common.variant.VariantTier;
+import com.hartwig.hmftools.common.variant.SmallVariant;
+import com.hartwig.hmftools.common.variant.SmallVariantFactory;
+import com.hartwig.hmftools.common.variant.VcfFileReader;
+import com.hartwig.hmftools.datamodel.orange.ImmutableOrangePlots;
+import com.hartwig.hmftools.datamodel.purple.PurpleRecord;
+import com.hartwig.hmftools.datamodel.purple.PurpleVariant;
 import com.hartwig.hmftools.orange.OrangeConfig;
+import com.hartwig.hmftools.orange.algo.plot.PlotManager;
 
 import org.jetbrains.annotations.Nullable;
 
 public final class PurpleDataLoader
 {
-    public static PurpleData load(final OrangeConfig config, final Map<String,DriverGene> driverGenes) throws IOException
+    public static PurpleData load(final OrangeConfig config) throws IOException
     {
-        String tumorSample = config.tumorSampleId();
-        String referenceSample = config.wgsRefConfig() != null ? config.wgsRefConfig().referenceSampleId() : null;
-        String rnaSample = config.rnaConfig() != null ? config.rnaConfig().rnaSampleId() : null;
-        String purpleDir = config.purpleDataDirectory();
+        String tumorId = config.TumorId;
+        String purpleDir = config.PurpleDataDirectory;
 
-        String qcFile = PurpleQCFile.generateFilename(purpleDir, tumorSample);
-        String purityTsv = PurplePurity.generateFilename(purpleDir, tumorSample);
-        String somaticDriverCatalogTsv = DriverCatalogFile.generateSomaticFilename(purpleDir, tumorSample);
-        String somaticVariantVcf = resolveVcfPath(PurpleCommon.purpleSomaticVcfFile(purpleDir, tumorSample));
-        String germlineDriverCatalogTsv = DriverCatalogFile.generateGermlineFilename(purpleDir, tumorSample);
-        String germlineVariantVcf = resolveVcfPath(PurpleCommon.purpleGermlineVcfFile(purpleDir, tumorSample));
-        String copyNumberTsv = PurpleCopyNumberFile.generateFilenameForReading(purpleDir, tumorSample);
-        String geneCopyNumberTsv = GeneCopyNumberFile.generateFilename(purpleDir, tumorSample);
-        String germlineDeletionTsv = GermlineAmpDel.generateFilename(purpleDir, tumorSample);
+        String qcFile = PurpleQCFile.generateFilename(purpleDir, tumorId);
+        String purityTsv = PurplePurity.generateFilename(purpleDir, tumorId);
+        String somaticDriverCatalogTsv = DriverCatalogFile.generateSomaticFilename(purpleDir, tumorId);
+        String somaticVariantVcf = resolveVcfPath(PurpleCommon.purpleSomaticVcfFile(purpleDir, tumorId));
+        String germlineDriverCatalogTsv = DriverCatalogFile.generateGermlineFilename(purpleDir, tumorId);
+        String germlineVariantVcf = resolveVcfPath(PurpleCommon.purpleGermlineVcfFile(purpleDir, tumorId));
+        String geneCopyNumberTsv = GeneCopyNumberFile.generateFilename(purpleDir, tumorId);
+        String germlineDeletionTsv = GermlineAmpDel.generateFilename(purpleDir, tumorId);
 
-        return load(
-                tumorSample, referenceSample, rnaSample, qcFile, purityTsv,
-                somaticDriverCatalogTsv, somaticVariantVcf, germlineDriverCatalogTsv, germlineVariantVcf,
-                copyNumberTsv, geneCopyNumberTsv, germlineDeletionTsv, driverGenes);
+        String chrArmCopyNumberTsv = ChrArmCopyNumbersFile.generateFilename(purpleDir, tumorId);
+
+        PurityContext purityContext = PurityContextFile.readWithQC(qcFile, purityTsv);
+
+        List<DriverCatalog> somaticDrivers = DriverCatalogFile.read(somaticDriverCatalogTsv);
+
+        // exclude non-reportable events
+        somaticDrivers = somaticDrivers.stream().filter(x -> x.reportedStatus() != ReportedStatus.NOT_REPORTED).collect(Collectors.toList());
+
+        VcfFileReader vcfFileReader = new VcfFileReader(somaticVariantVcf);
+
+        String rnaSampleId = config.RnaSampleId != null && vcfFileReader.genotypeOrdinals().containsKey(config.RnaSampleId) ?
+                config.RnaSampleId : null;
+
+        List<SmallVariant> allSomaticVariants = SmallVariantFactory.passOnlyInstance().fromVCFFile(
+                tumorId, config.ReferenceId, rnaSampleId, somaticVariantVcf);
+
+        List<SmallVariant> panelSomaticVariants = allSomaticVariants.stream().filter(x -> x.reported()).collect(Collectors.toList());
+
+        List<GeneCopyNumber> geneCopyNumbers = GeneCopyNumberFile.read(geneCopyNumberTsv);
+
+        // no need to filter gene CNs to the panel since the gene copy numbers aren't part of the final Purple record anyway
+        // an could be used in other analyses which aren't based around drivers
+
+        List<ChrArmCopyNumber> chrArmCopyNumbers = ChrArmCopyNumbersFile.read(chrArmCopyNumberTsv);
+
+        List<DriverCatalog> germlineDrivers = null;
+        List<SmallVariant> panelGermlineVariants = null;
+        List<GermlineAmpDel> panelGermlineAmpDels = null;
+
+        if(config.hasReference())
+        {
+            germlineDrivers = DriverCatalogFile.read(germlineDriverCatalogTsv);
+
+            germlineDrivers = germlineDrivers.stream().filter(x -> x.reportedStatus() != ReportedStatus.NOT_REPORTED).collect(Collectors.toList());
+
+            List<SmallVariant> germlineVariants = new SmallVariantFactory().fromVCFFile(
+                    tumorId, config.ReferenceId, config.RnaSampleId, germlineVariantVcf);
+
+            panelGermlineVariants = germlineVariants.stream().filter(x -> x.reported()).collect(Collectors.toList());
+
+            List<GermlineAmpDel> germlineAmpDels = GermlineAmpDel.read(germlineDeletionTsv).stream()
+                    .filter(x -> x.Filter.equals(CommonVcfTags.PASS_FILTER)).collect(Collectors.toList());
+
+            panelGermlineAmpDels = germlineAmpDels.stream().filter(x -> x.Reported == ReportedStatus.REPORTED).collect(Collectors.toList());
+        }
+
+        List<String> variantPlots = Lists.newArrayList();
+
+        if(config.SagePlotDirectory != null)
+        {
+            for(String file : new File(config.SagePlotDirectory).list())
+            {
+                if(file.endsWith(MiscToolFiles.SAGE_VIS_PLOT_FILE_EXTENSION))
+                    variantPlots.add(config.SagePlotDirectory + file);
+            }
+
+            LOGGER.debug(" loaded {} Sage-vis plots from {}", variantPlots.size(), config.SagePlotDirectory);
+        }
+
+        return ImmutablePurpleData.builder()
+                .purityContext(purityContext)
+                .somaticDrivers(somaticDrivers)
+                .germlineDrivers(germlineDrivers)
+                .somaticVariants(panelSomaticVariants)
+                .germlineVariants(panelGermlineVariants)
+                .somaticGeneCopyNumbers(geneCopyNumbers)
+                .germlineAmpDels(panelGermlineAmpDels)
+                .chrArmCopyNumbers(chrArmCopyNumbers)
+                .variantPlots(variantPlots)
+                .build();
+    }
+
+    public static void addPurplePlots(
+            final OrangeConfig config, final PlotManager plotManager,
+            final ImmutableOrangePlots.Builder builder) throws IOException
+    {
+        String purpleFinalCircosPlot = plotManager.processPlotFile(
+                purplePlotFile(config.PurplePlotDirectory, config.TumorId, PURPLE_PLOT_FINAL_CIRCOS));
+
+        String purpleInputCircosPlot = plotManager.processPlotFile(
+                purplePlotFile(config.PurplePlotDirectory, config.TumorId, PURPLE_PLOT_INPUT_CIRCOS));
+
+        String purpleCopyNumberPlot = plotManager.processPlotFile(
+                purplePlotFile(config.PurplePlotDirectory, config.TumorId, PURPLE_PLOT_COPY_NUMBER));
+
+        String purpleClonalityPlot = plotManager.processPlotFile(
+                purplePlotFile(config.PurplePlotDirectory, config.TumorId, PURPLE_PLOT_SOMATIC_CLONALITY));
+
+        String purplePurityRangePlot = plotManager.processPlotFile(
+                purplePlotFile(config.PurplePlotDirectory, config.TumorId, PURPLE_PLOT_PURITY_RANGE));
+
+        String purpleMinorAlleleMapPlot = plotManager.processPlotFile(
+                purplePlotFile(config.PurplePlotDirectory, config.TumorId, PURPLE_PLOT_MINOR_ALLELE));
+
+        String purpleVariantCopyNumberPlot = plotManager.processPlotFile(
+                purplePlotFile(config.PurplePlotDirectory, config.TumorId, PURPLE_PLOT_SOMATIC_CN));
+
+        String purpleRainfallPlot = plotManager.processPlotFile(
+                purplePlotFile(config.PurplePlotDirectory, config.TumorId, PURPLE_PLOT_SOMATIC_RAINFALL));
+
+        builder.purpleInputCircosPlot(purpleInputCircosPlot)
+            .purpleFinalCircosPlot(purpleFinalCircosPlot)
+            .purpleClonalityPlot(purpleClonalityPlot)
+            .purpleCopyNumberPlot(purpleCopyNumberPlot)
+            .purpleMinorAlleleMapPlot(purpleMinorAlleleMapPlot)
+            .purpleVariantCopyNumberPlot(purpleVariantCopyNumberPlot)
+            .purplePurityRangePlot(purplePurityRangePlot)
+            .purpleRainfallPlot(purpleRainfallPlot);
     }
 
     private static String resolveVcfPath(final String vcfPath)
@@ -60,56 +185,5 @@ public final class PurpleDataLoader
             }
         }
         return vcfPath;
-    }
-
-    private static PurpleData load(
-            final String tumorSample, @Nullable String referenceSample, @Nullable String rnaSample,
-            final String qcFile, final String purityTsv, final String somaticDriverCatalogTsv, final String somaticVariantVcf,
-            final String germlineDriverCatalogTsv, final String germlineVariantVcf,
-            final String copyNumberTsv, final String geneCopyNumberTsv,
-            final String germlineDeletionTsv, final Map<String,DriverGene> driverGenes) throws IOException
-    {
-        PurityContext purityContext = PurityContextFile.readWithQC(qcFile, purityTsv);
-
-        List<DriverCatalog> somaticDrivers = DriverCatalogFile.read(somaticDriverCatalogTsv);
-
-        List<PurpleVariantContext> allSomaticVariants = PurpleVariantContextLoader.withPassingOnlyFilter()
-                .fromVCFFile(tumorSample, referenceSample, rnaSample, somaticVariantVcf);
-
-        List<PurpleVariantContext> panelSomaticVariants = allSomaticVariants.stream().filter(x -> x.reported()).collect(Collectors.toList());
-
-        List<GeneCopyNumber> geneCopyNumbers = GeneCopyNumberFile.read(geneCopyNumberTsv);
-
-        geneCopyNumbers = geneCopyNumbers.stream().filter(x -> driverGenes.containsKey(x.GeneName)).collect(Collectors.toList());
-
-        List<DriverCatalog> germlineDrivers = null;
-        List<PurpleVariantContext> panelGermlineVariants = null;
-        List<GermlineAmpDel> panelGermlineDeletions = null;
-
-        if(referenceSample != null)
-        {
-            germlineDrivers = DriverCatalogFile.read(germlineDriverCatalogTsv);
-
-            List<PurpleVariantContext> germlineVariants = new PurpleVariantContextLoader().fromVCFFile(
-                    tumorSample, referenceSample, rnaSample, germlineVariantVcf);
-
-            panelGermlineVariants = germlineVariants.stream().filter(x -> x.reported()).collect(Collectors.toList());
-
-            List<GermlineAmpDel> germlineDeletions = GermlineAmpDel.read(germlineDeletionTsv).stream()
-                    .filter(x -> x.Filter.equals(CommonVcfTags.PASS_FILTER)).collect(Collectors.toList());
-
-            panelGermlineDeletions = germlineDeletions.stream().filter(x -> driverGenes.containsKey(x.GeneName)).collect(Collectors.toList());
-        }
-
-        return ImmutablePurpleData.builder()
-                .purityContext(purityContext)
-                .somaticDrivers(somaticDrivers)
-                .germlineDrivers(germlineDrivers)
-                .somaticVariants(panelSomaticVariants)
-                .germlineVariants(panelGermlineVariants)
-                .somaticCopyNumbers(PurpleCopyNumberFile.read(copyNumberTsv))
-                .somaticGeneCopyNumbers(geneCopyNumbers)
-                .germlineDeletions(panelGermlineDeletions)
-                .build();
     }
 }

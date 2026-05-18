@@ -1,7 +1,12 @@
 package com.hartwig.hmftools.wisp.purity.variant;
 
+import static java.lang.Math.max;
+import static java.lang.Math.min;
+import static java.lang.Math.round;
 import static java.lang.String.format;
 
+import static com.hartwig.hmftools.common.redux.BaseQualAdjustment.phredQualToProbability;
+import static com.hartwig.hmftools.common.redux.BaseQualAdjustment.probabilityToPhredQual;
 import static com.hartwig.hmftools.common.stats.PoissonCalcs.calcPoissonNoiseValue;
 import static com.hartwig.hmftools.common.utils.file.FileDelimiters.ITEM_DELIM;
 import static com.hartwig.hmftools.wisp.purity.PurityConstants.HIGH_PROBABILITY;
@@ -26,7 +31,9 @@ import java.util.List;
 import java.util.StringJoiner;
 import java.util.stream.Collectors;
 
-import com.hartwig.hmftools.common.purple.PurityContext;
+import com.hartwig.hmftools.common.bam.ConsensusType;
+import com.hartwig.hmftools.common.codon.Nucleotides;
+import com.hartwig.hmftools.common.redux.BaseQualAdjustment;
 import com.hartwig.hmftools.common.variant.VariantType;
 import com.hartwig.hmftools.wisp.purity.SampleData;
 import com.hartwig.hmftools.wisp.purity.PurityConfig;
@@ -39,12 +46,13 @@ public class SomaticPurityEstimator
     private final SampleData mSample;
     private final BqrAdjustment mBqrAdjustment;
 
-    public SomaticPurityEstimator(final PurityConfig config, final ResultsWriter resultsWriter, final SampleData sample)
+    public SomaticPurityEstimator(
+            final PurityConfig config, final ResultsWriter resultsWriter, final SampleData sampleData, final BqrAdjustment bqrAdjustment)
     {
         mConfig = config;
         mResultsWriter = resultsWriter;
-        mSample = sample;
-        mBqrAdjustment = new BqrAdjustment(mConfig);
+        mSample = sampleData;
+        mBqrAdjustment = bqrAdjustment;
     }
 
     public SomaticPurityResult calculatePurity(
@@ -68,20 +76,23 @@ public class SomaticPurityEstimator
                     variant.CopyNumber, variant.VariantCopyNumber, tumorFragData.AlleleCount, sampleFragData.AlleleCount,
                     tumorFragData.Depth, sampleFragData.Depth);
 
-            dualFragmentTotals.addVariantData(
-                    variant.CopyNumber, variant.VariantCopyNumber, tumorFragData.AlleleCount, sampleFragData.UmiCounts.AlleleDual,
-                    tumorFragData.Depth, sampleFragData.UmiCounts.TotalDual);
+            boolean includeDual = !sampleFragData.isDualFiltered();
 
-            umiTypeCounts.add(sampleFragData.UmiCounts);
-            sampleDualDP += sampleFragData.UmiCounts.TotalDual;
-            sampleDualAD += sampleFragData.UmiCounts.AlleleDual;
+            if(includeDual)
+            {
+                dualFragmentTotals.addVariantData(
+                        variant.CopyNumber, variant.VariantCopyNumber, tumorFragData.AlleleCount, sampleFragData.UmiCounts.AlleleDual,
+                        tumorFragData.Depth, sampleFragData.UmiCounts.TotalDual);
+
+                sampleDualDP += sampleFragData.UmiCounts.TotalDual;
+                sampleDualAD += sampleFragData.UmiCounts.AlleleDual;
+            }
+
+            umiTypeCounts.add(sampleFragData.UmiCounts, includeDual);
         }
 
         if(fragmentTotals.sampleDepthTotal() == 0)
             return INVALID_RESULT;
-
-        if(!mConfig.SkipBqr)
-            mBqrAdjustment.loadBqrData(sampleId);
 
         if(mConfig.hasSyntheticTumor())
         {
@@ -91,7 +102,7 @@ public class SomaticPurityEstimator
         PurityCalcData purityCalcData = new PurityCalcData();
 
         // firstly estimate raw purity without consideration of clonal peaks
-        double noiseRate = mConfig.noiseRate(false);
+        double noiseRate;
 
         // calculate a limit-of-detection (LOD), being the number of fragments that would return a 99% confidence of a tumor presence
         if(!mConfig.SkipBqr)
@@ -111,6 +122,7 @@ public class SomaticPurityEstimator
         }
         else
         {
+            noiseRate = mConfig.noiseRate(false);
             purityCalcData.RawPurityEstimate = estimatedPurity(fragmentTotals.rawSampleVaf(), noiseRate, fragmentTotals);
             purityCalcData.Probability = estimatedProbability(fragmentTotals, noiseRate);
             purityCalcData.LodPurityEstimate = calcLimitOfDetection(fragmentTotals, noiseRate);
@@ -215,9 +227,24 @@ public class SomaticPurityEstimator
         return new SomaticPurityResult(true, totalVariantCount, sjOutlier.toString(), fragmentTotals, umiTypeCounts, purityCalcData);
     }
 
-    public double getBqrErrorRate(final SomaticVariant variant)
+    private double getBqrErrorRate(final SomaticVariant variant, final GenotypeFragments sampleFragData)
     {
-        return mBqrAdjustment.calcErrorRate(variant.TriNucContext, variant.Alt);
+        return getBqrErrorRate(variant, sampleFragData, ConsensusType.NONE);
+    }
+
+    public double getBqrErrorRate(final SomaticVariant variant, final GenotypeFragments sampleFragData, final ConsensusType consensusType)
+    {
+        double readStrandBias = max(min(sampleFragData.readStrandBias(), 1), 0);
+
+        double errorRateForward = mBqrAdjustment.calcErrorRate(variant.TriNucContext, variant.Alt, consensusType);
+        String tncReversed = Nucleotides.reverseComplementBases(variant.TriNucContext);
+        String altReversed = Nucleotides.reverseComplementBases(variant.Alt);
+        double errorRateReverse = mBqrAdjustment.calcErrorRate(tncReversed, altReversed, consensusType);
+
+        double weightedPhredQual = readStrandBias * probabilityToPhredQual(errorRateForward)
+                + (1 - readStrandBias) * probabilityToPhredQual(errorRateReverse);
+
+        return phredQualToProbability((byte)round(weightedPhredQual));
     }
 
     private FragmentTotals calculateThresholdValues(
@@ -246,7 +273,7 @@ public class SomaticPurityEstimator
                 if(!hasVariantContext(filteredBqrData, variant.TriNucContext, variant.Alt))
                     continue;
 
-                varBqrErrorRate = getBqrErrorRate(variant);
+                varBqrErrorRate = getBqrErrorRate(variant, sampleFragData);
             }
             else
             {

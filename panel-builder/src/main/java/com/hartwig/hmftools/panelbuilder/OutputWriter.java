@@ -8,13 +8,16 @@ import static com.hartwig.hmftools.common.utils.file.FileDelimiters.TSV_EXTENSIO
 import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.createBufferedWriter;
 import static com.hartwig.hmftools.panelbuilder.PanelBuilderConstants.CANDIDATE_PROBES_FILE_NAME;
 import static com.hartwig.hmftools.panelbuilder.PanelBuilderConstants.CANDIDATE_TARGET_REGIONS_FILE_NAME;
+import static com.hartwig.hmftools.panelbuilder.PanelBuilderConstants.COVERED_REGIONS_FILE_NAME;
+import static com.hartwig.hmftools.panelbuilder.PanelBuilderConstants.COVERED_TARGET_REGIONS_FILE_NAME;
 import static com.hartwig.hmftools.panelbuilder.PanelBuilderConstants.FASTA_EXTENSION;
 import static com.hartwig.hmftools.panelbuilder.PanelBuilderConstants.GENE_STATS_FILE_NAME;
 import static com.hartwig.hmftools.panelbuilder.PanelBuilderConstants.PANEL_PROBES_FILE_STEM;
 import static com.hartwig.hmftools.panelbuilder.PanelBuilderConstants.PROBE_LENGTH;
-import static com.hartwig.hmftools.panelbuilder.PanelBuilderConstants.PROBE_TARGETED_REGIONS_FILE_NAME;
 import static com.hartwig.hmftools.panelbuilder.PanelBuilderConstants.REJECTED_FEATURES_FILE_STEM;
 import static com.hartwig.hmftools.panelbuilder.PanelBuilderConstants.SAMPLE_VARIANT_INFO_FILE_NAME;
+import static com.hartwig.hmftools.panelbuilder.RegionUtils.mergeOverlapAndAdjacentRegions;
+import static com.hartwig.hmftools.panelbuilder.Utils.combineStringUnique;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -23,7 +26,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
+import com.hartwig.hmftools.common.genome.region.Orientation;
 import com.hartwig.hmftools.common.region.ChrBaseRegion;
 import com.hartwig.hmftools.common.utils.file.DelimFileWriter;
 import com.hartwig.hmftools.panelbuilder.samplevariants.SampleVariants;
@@ -38,7 +43,8 @@ public class OutputWriter implements AutoCloseable
     private final DelimFileWriter<Probe> mPanelProbesTsvWriter;
     private final BufferedWriter mPanelProbesBedWriter;
     private final BufferedWriter mPanelProbesFastaWriter;
-    private final BufferedWriter mProbeTargetedRegionsBedWriter;
+    private final BufferedWriter mCoveredTargetRegionsBedWriter;
+    private final BufferedWriter mCoveredRegionsBedWriter;
     private final DelimFileWriter<RejectedFeature> mRejectedFeaturesTsvWriter;
     private final BufferedWriter mRejectedFeaturesBedWriter;
     private final BufferedWriter mCandidateTargetRegionsBedWriter;
@@ -53,8 +59,10 @@ public class OutputWriter implements AutoCloseable
     private enum PanelProbesColumns
     {
         StartRegion,
-        InsertSequence,
+        StartRegionOrient,
+        MiddleSequence,
         EndRegion,
+        EndRegionOrient,
         Sequence,
         TargetedStart,
         TargetedEnd,
@@ -71,14 +79,17 @@ public class OutputWriter implements AutoCloseable
         ProbeQualityScore,
         ProbeGCContent,
         TargetType,
-        TargetExtra
+        TargetExtra,
+        RejectionReason,
     }
 
     private enum CandidateProbesColumns
     {
         StartRegion,
-        InsertSequence,
+        StartRegionOrient,
+        MiddleSequence,
         EndRegion,
+        EndRegionOrient,
         Sequence,
         TargetType,
         TargetExtra,
@@ -96,6 +107,7 @@ public class OutputWriter implements AutoCloseable
     private enum SampleVariantInfoColumns
     {
         Variant,
+        TargetType,
         FilterReason
     }
 
@@ -117,7 +129,8 @@ public class OutputWriter implements AutoCloseable
         String panelProbesTsvFile = outputFilePath.apply(PANEL_PROBES_FILE_STEM + TSV_EXTENSION);
         String panelProbesBedFile = outputFilePath.apply(PANEL_PROBES_FILE_STEM + BED_EXTENSION);
         String panelProbesFastaFile = outputFilePath.apply(PANEL_PROBES_FILE_STEM + FASTA_EXTENSION);
-        String probeTargetedRegionsBedFile = outputFilePath.apply(PROBE_TARGETED_REGIONS_FILE_NAME);
+        String coveredTargetRegionsBedFile = outputFilePath.apply(COVERED_TARGET_REGIONS_FILE_NAME);
+        String coveredRegionsBedFile = outputFilePath.apply(COVERED_REGIONS_FILE_NAME);
         String rejectedFeaturesTsvFile = outputFilePath.apply(REJECTED_FEATURES_FILE_STEM + TSV_EXTENSION);
         String rejectedFeaturesBedFile = outputFilePath.apply(REJECTED_FEATURES_FILE_STEM + BED_EXTENSION);
         String candidateTargetRegionsBedFile = outputFilePath.apply(CANDIDATE_TARGET_REGIONS_FILE_NAME);
@@ -130,7 +143,9 @@ public class OutputWriter implements AutoCloseable
         mPanelProbesBedWriter = createBufferedWriter(panelProbesBedFile);
         mPanelProbesFastaWriter = createBufferedWriter(panelProbesFastaFile);
 
-        mProbeTargetedRegionsBedWriter = createBufferedWriter(probeTargetedRegionsBedFile);
+        mCoveredTargetRegionsBedWriter = createBufferedWriter(coveredTargetRegionsBedFile);
+
+        mCoveredRegionsBedWriter = createBufferedWriter(coveredRegionsBedFile);
 
         mRejectedFeaturesTsvWriter =
                 new DelimFileWriter<>(rejectedFeaturesTsvFile, RejectedFeaturesColumns.values(), OutputWriter::writeRejectedFeaturesTsvRow);
@@ -156,17 +171,17 @@ public class OutputWriter implements AutoCloseable
                 new DelimFileWriter<>(sampleVariantInfoTsvFile, SampleVariantInfoColumns.values(), OutputWriter::writeSampleVariantInfoRow);
     }
 
-    public void writePanelProbes(List<Probe> probes) throws IOException
+    public void writePanelProbes(final List<Probe> probes) throws IOException
     {
         LOGGER.debug("Writing {} panel probes to file", probes.size());
 
-        // TODO: should there be a probe ID which matches between TSV, BED, and FASTA?
+        // TODO? should there be a probe ID which matches between TSV, BED, and FASTA?
 
-        // Must be sorted for BED files since some tools expect sorted order.
-        probes = probes.stream().sorted(Comparator.comparing(
+        // Sort probes roughly by region to give a more consistent output.
+        List<Probe> probesSorted = probes.stream().sorted(Comparator.comparing(
                 probe -> probe.definition().singleRegionOrNull(), Comparator.nullsLast(Comparator.naturalOrder()))).toList();
 
-        for(Probe probe : probes)
+        for(Probe probe : probesSorted)
         {
             // A few basic checks that might reveal bugs in the code elsewhere.
             if(!probe.accepted())
@@ -179,23 +194,36 @@ public class OutputWriter implements AutoCloseable
             }
 
             mPanelProbesTsvWriter.writeRow(probe);
-            if(probe.definition().isSingleRegion())
-            {
-                writePanelProbesBedRow(probe);
-            }
             writePanelProbesFastaRecord(probe);
+        }
+
+        // Must be sorted for BED files since some tools expect sorted order.
+        List<NamedRegion> bedRegions = probes.stream()
+                .flatMap(probe ->
+                {
+                    String name = probeBedName(probe);
+                    return probe.definition().regions().stream().map(region -> new NamedRegion(region, name));
+                })
+                .sorted()
+                .toList();
+        for(NamedRegion region : bedRegions)
+        {
+            writeBedRow(region, mPanelProbesBedWriter);
         }
     }
 
     private static void writePanelProbesTsvRow(final Probe probe, DelimFileWriter.Row row)
     {
-        // TODO? write region orientation too
         SequenceDefinition definition = probe.definition();
         ChrBaseRegion start = definition.startRegion();
+        Orientation startOrientation = definition.startOrientation();
         ChrBaseRegion end = definition.endRegion();
+        Orientation endOrientation = definition.endOrientation();
         row.setOrNull(PanelProbesColumns.StartRegion, start == null ? null : start.toString());
-        row.set(PanelProbesColumns.InsertSequence, definition.insertSequence());
+        row.setOrNull(PanelProbesColumns.StartRegionOrient, startOrientation == null ? null : startOrientation.asChar());
+        row.setOrNull(PanelProbesColumns.MiddleSequence, definition.insertSequence());
         row.setOrNull(PanelProbesColumns.EndRegion, end == null ? null : end.toString());
+        row.setOrNull(PanelProbesColumns.EndRegionOrient, endOrientation == null ? null : endOrientation.asChar());
         row.setOrNull(PanelProbesColumns.Sequence, probe.sequence());
         row.set(PanelProbesColumns.TargetedStart, probe.targetedRange().startOffset());
         row.set(PanelProbesColumns.TargetedEnd, probe.targetedRange().endOffset());
@@ -203,11 +231,6 @@ public class OutputWriter implements AutoCloseable
         row.setOrNull(PanelProbesColumns.GCContent, probe.gcContent());
         row.set(PanelProbesColumns.TargetType, probe.metadata().type().name());
         row.set(PanelProbesColumns.TargetExtra, probe.metadata().extraInfo());
-    }
-
-    private void writePanelProbesBedRow(final Probe probe) throws IOException
-    {
-        mPanelProbesBedWriter.write(formatBedRow(probe.definition().singleRegion(), probeBedName(probe)));
     }
 
     private void writePanelProbesFastaRecord(final Probe probe) throws IOException
@@ -222,35 +245,61 @@ public class OutputWriter implements AutoCloseable
         mPanelProbesFastaWriter.write(format(">%s\n%s\n", label, sequence));
     }
 
-    public void writeProbeTargetedRegions(List<TargetRegion> regions) throws IOException
+    public void writeCoveredTargetRegions(final List<TargetRegion> regions) throws IOException
     {
-        LOGGER.debug("Writing {} probe targeted regions to file", regions.size());
+        LOGGER.debug("Writing {} covered target regions to file", regions.size());
 
         // Must be sorted for BED files since some tools expect sorted order.
-        regions = regions.stream().sorted(Comparator.comparing(TargetRegion::region)).toList();
+        List<TargetRegion> regionsSorted = regions.stream().sorted(Comparator.comparing(TargetRegion::region)).toList();
 
-        for(TargetRegion region : regions)
+        for(TargetRegion region : regionsSorted)
         {
-            writeProbeTargetedRegionsBedRow(region);
+            writeTargetRegionBedRow(region, mCoveredTargetRegionsBedWriter);
         }
     }
 
-    private void writeProbeTargetedRegionsBedRow(final TargetRegion region) throws IOException
+    public void writeCoveredRegions(final List<Probe> probes) throws IOException
     {
-        writeTargetRegionBedRow(region, mProbeTargetedRegionsBedWriter);
+        List<NamedRegion> regions = createCoveredRegions(probes);
+
+        LOGGER.debug("Writing {} covered regions to file", regions.size());
+
+        // Must be sorted for BED files since some tools expect sorted order.
+        List<NamedRegion> regionsSorted = regions.stream().sorted().toList();
+
+        for(NamedRegion region : regionsSorted)
+        {
+            writeBedRow(region, mCoveredRegionsBedWriter);
+        }
     }
 
-    public void writeRejectedFeatures(List<RejectedFeature> rejectedFeatures) throws IOException
+    private static List<NamedRegion> createCoveredRegions(final List<Probe> probes)
+    {
+        Stream<NamedRegion> regions = probes.stream()
+                .flatMap(probe -> probe.definition()
+                        .regions()
+                        .stream()
+                        .map(region -> new NamedRegion(region, targetMetadataToBedName(probe.metadata()))));
+        return mergeOverlapAndAdjacentRegions(regions, NamedRegion::region, OutputWriter::mergeCoveredRegion);
+    }
+
+    private static NamedRegion mergeCoveredRegion(final ChrBaseRegion mergedRegion, final NamedRegion r1, final NamedRegion r2)
+    {
+        return new NamedRegion(mergedRegion, combineStringUnique(r1.name(), r2.name(), (s1, s2) -> format("%s | %s", r1.name(), r2.name())));
+    }
+
+    public void writeRejectedFeatures(final List<RejectedFeature> rejectedFeatures) throws IOException
     {
         LOGGER.debug("Writing {} rejected features to file", rejectedFeatures.size());
 
         // Must be sorted for BED files since some tools expect sorted order.
-        rejectedFeatures = rejectedFeatures.stream()
+        List<RejectedFeature> rejectedFeaturesSorted = rejectedFeatures.stream()
                 .sorted(Comparator.comparing(RejectedFeature::region, Comparator.nullsLast(Comparator.naturalOrder()))).toList();
 
-        for(RejectedFeature rejectedFeature : rejectedFeatures)
+        for(RejectedFeature rejectedFeature : rejectedFeaturesSorted)
         {
             mRejectedFeaturesTsvWriter.writeRow(rejectedFeature);
+            // TODO: should write the regions from the probe too?
             if(rejectedFeature.region() != null)
             {
                 writeRejectedFeaturesBedRow(rejectedFeature);
@@ -260,28 +309,29 @@ public class OutputWriter implements AutoCloseable
 
     private static void writeRejectedFeaturesTsvRow(final RejectedFeature rejectedFeature, DelimFileWriter.Row row)
     {
+        Probe probe = rejectedFeature.probe();
         row.setOrNull(RejectedFeaturesColumns.Region, rejectedFeature.region() == null ? null : rejectedFeature.region().toString());
-        row.setOrNull(RejectedFeaturesColumns.ProbeSequence, rejectedFeature.probe() == null ? null : rejectedFeature.probe().sequence());
-        row.setOrNull(RejectedFeaturesColumns.ProbeQualityScore, rejectedFeature.probe() == null ? null : rejectedFeature.probe().qualityScore());
-        row.setOrNull(RejectedFeaturesColumns.ProbeGCContent, rejectedFeature.probe() == null ? null : rejectedFeature.probe().gcContent());
+        row.setOrNull(RejectedFeaturesColumns.ProbeSequence, probe == null ? null : probe.sequence());
+        row.setOrNull(RejectedFeaturesColumns.ProbeQualityScore, probe == null ? null : probe.qualityScore());
+        row.setOrNull(RejectedFeaturesColumns.ProbeGCContent, probe == null ? null : probe.gcContent());
         row.set(RejectedFeaturesColumns.TargetType, rejectedFeature.metadata().type().name());
         row.set(RejectedFeaturesColumns.TargetExtra, rejectedFeature.metadata().extraInfo());
+        row.set(RejectedFeaturesColumns.RejectionReason, probe == null ? null : requireNonNull(probe.evaluationResult()).rejectionInfo());
     }
 
     private void writeRejectedFeaturesBedRow(final RejectedFeature rejectedFeature) throws IOException
     {
-        mRejectedFeaturesBedWriter.write(
-                formatBedRow(requireNonNull(rejectedFeature.region()), targetMetadataToBedName(rejectedFeature.metadata())));
+        writeBedRow(requireNonNull(rejectedFeature.region()), targetMetadataToBedName(rejectedFeature.metadata()), mRejectedFeaturesBedWriter);
     }
 
-    public void writeCandidateTargetRegions(List<TargetRegion> regions) throws IOException
+    public void writeCandidateTargetRegions(final List<TargetRegion> regions) throws IOException
     {
         LOGGER.debug("Writing {} candidate target regions to file", regions.size());
 
         // Must be sorted for BED files since some tools expect sorted order.
-        regions = regions.stream().sorted(Comparator.comparing(TargetRegion::region)).toList();
+        List<TargetRegion> regionsSorted = regions.stream().sorted(Comparator.comparing(TargetRegion::region)).toList();
 
-        for(TargetRegion region : regions)
+        for(TargetRegion region : regionsSorted)
         {
             writeTargetRegionBedRow(region, mCandidateTargetRegionsBedWriter);
         }
@@ -322,10 +372,14 @@ public class OutputWriter implements AutoCloseable
     {
         SequenceDefinition definition = probe.definition();
         ChrBaseRegion start = definition.startRegion();
+        Orientation startOrientation = definition.startOrientation();
         ChrBaseRegion end = definition.endRegion();
+        Orientation endOrientation = definition.endOrientation();
         row.setOrNull(CandidateProbesColumns.StartRegion, start == null ? null : start.toString());
-        row.set(CandidateProbesColumns.InsertSequence, definition.insertSequence());
+        row.setOrNull(CandidateProbesColumns.StartRegionOrient, startOrientation == null ? null : startOrientation.asChar());
+        row.setOrNull(CandidateProbesColumns.MiddleSequence, definition.insertSequence());
         row.setOrNull(CandidateProbesColumns.EndRegion, end == null ? null : end.toString());
+        row.setOrNull(CandidateProbesColumns.EndRegionOrient, endOrientation == null ? null : endOrientation.asChar());
         row.setOrNull(CandidateProbesColumns.Sequence, probe.sequence());
         row.set(CandidateProbesColumns.TargetType, probe.metadata().type().name());
         row.set(CandidateProbesColumns.TargetExtra, probe.metadata().extraInfo());
@@ -336,15 +390,36 @@ public class OutputWriter implements AutoCloseable
 
     private static void writeTargetRegionBedRow(final TargetRegion region, BufferedWriter writer) throws IOException
     {
-        writer.write(formatBedRow(region.region(), targetMetadataToBedName(region.metadata())));
+        writeBedRow(region.region(), targetMetadataToBedName(region.metadata()), writer);
+    }
+
+    private static void writeBedRow(final NamedRegion region, BufferedWriter writer) throws IOException
+    {
+        writeBedRow(region.region(), region.name(), writer);
+    }
+
+    private static void writeBedRow(final ChrBaseRegion region, final String name, BufferedWriter writer) throws IOException
+    {
+        writer.write(formatBedRow(region, name));
     }
 
     private static String probeBedName(final Probe probe)
     {
-        double qualityScore = requireNonNull(probe.qualityScore());
-        double gcContent = requireNonNull(probe.gcContent());
-        String baseName = targetMetadataToBedName(probe.metadata());
-        return format("%s:QS=%.2f:GC=%.2f", baseName, qualityScore, gcContent);
+        String name = targetMetadataToBedName(probe.metadata());
+
+        Double qualityScore = probe.qualityScore();
+        if(qualityScore != null)
+        {
+            name += format(":QS=%.2f", qualityScore);
+        }
+
+        Double gcContent = probe.gcContent();
+        if(gcContent != null)
+        {
+            name += format(":GC=%.2f", gcContent);
+        }
+
+        return name;
     }
 
     private static String targetMetadataToBedName(final TargetMetadata info)
@@ -390,7 +465,8 @@ public class OutputWriter implements AutoCloseable
     private static void writeSampleVariantInfoRow(final SampleVariants.VariantInfo variantInfo, DelimFileWriter.Row row)
     {
         row.set(SampleVariantInfoColumns.Variant, variantInfo.variant());
-        row.set(SampleVariantInfoColumns.FilterReason, variantInfo.filterReason() == null ? "PASS" : variantInfo.filterReason());
+        row.set(SampleVariantInfoColumns.TargetType, variantInfo.targetType().name());
+        row.set(SampleVariantInfoColumns.FilterReason, variantInfo.filterReason() == null ? "PASS" : variantInfo.filterReason().name());
     }
 
     @Override
@@ -402,7 +478,9 @@ public class OutputWriter implements AutoCloseable
         mPanelProbesBedWriter.close();
         mPanelProbesFastaWriter.close();
 
-        mProbeTargetedRegionsBedWriter.close();
+        mCoveredRegionsBedWriter.close();
+
+        mCoveredTargetRegionsBedWriter.close();
 
         mRejectedFeaturesTsvWriter.close();
         mRejectedFeaturesBedWriter.close();

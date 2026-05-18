@@ -42,7 +42,7 @@ public class TestGermlineDeletionDataBuilder
     {
         return new GermlineAmpDelData(
                 new GermlineAmpDel(
-                        gene,
+                        gene, "",
                         "",
                         chromosomeBand,
                         -1,
@@ -50,6 +50,7 @@ public class TestGermlineDeletionDataBuilder
                         -1,
                         -1,
                         -1,
+                        false,
                         GermlineDetectionMethod.SEGMENT,
                         germlineStatus,
                         tumorStatus,

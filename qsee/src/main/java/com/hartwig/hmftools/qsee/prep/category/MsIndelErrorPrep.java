@@ -14,16 +14,18 @@ import com.hartwig.hmftools.common.redux.JitterCountsTable;
 import com.hartwig.hmftools.common.redux.JitterCountsTableFile;
 import com.hartwig.hmftools.common.redux.JitterTableRow;
 
+import com.hartwig.hmftools.qsee.common.SampleType;
 import com.hartwig.hmftools.qsee.feature.Feature;
-import com.hartwig.hmftools.qsee.feature.FeatureKey;
 import com.hartwig.hmftools.qsee.feature.FeatureType;
+import com.hartwig.hmftools.qsee.common.MultiFieldStringBuilder;
 import com.hartwig.hmftools.qsee.feature.SourceTool;
 import com.hartwig.hmftools.qsee.prep.CategoryPrep;
-import com.hartwig.hmftools.qsee.prep.CommonPrepConfig;
+import com.hartwig.hmftools.qsee.prep.QseePrepConfig;
+import com.hartwig.hmftools.qsee.prep.category.msindel.RepeatType;
 
 public class MsIndelErrorPrep implements CategoryPrep
 {
-    private final CommonPrepConfig mConfig;
+    private final QseePrepConfig mConfig;
 
     private static final SourceTool SOURCE_TOOL = SourceTool.REDUX;
 
@@ -33,19 +35,20 @@ public class MsIndelErrorPrep implements CategoryPrep
     private static final String FIELD_CONSENSUS_TYPE = "ConsensusType";
     private static final String FIELD_REF_NUM_UNITS = "RefNumUnits";
 
-    public MsIndelErrorPrep(CommonPrepConfig config)
+    public MsIndelErrorPrep(QseePrepConfig config)
     {
         mConfig = config;
     }
 
     public SourceTool sourceTool(){ return SOURCE_TOOL; }
+    public PrepCategory category() { return PrepCategory.MS_INDEL_ERROR; }
 
-    private String findBackwardsCompatibleJitterFile(String sampleId) throws NoSuchFileException
+    private String findBackwardsCompatibleJitterFile(String sampleId, SampleType sampleType) throws NoSuchFileException
     {
         // TODO: Remove this temporary method. In WiGiTS 3.0, the (new) REDUX jitter file path will be used.
 
-        File newJitterFile = new File(JitterCountsTableFile.generateFilename(mConfig.getReduxDir(sampleId), sampleId));
-        File oldJitterFile = new File(mConfig.getReduxDir(sampleId) + File.separator + sampleId + ".ms_table.tsv.gz");
+        File newJitterFile = new File(JitterCountsTableFile.generateFilename(mConfig.getReduxDir(sampleId, sampleType), sampleId));
+        File oldJitterFile = new File(mConfig.getReduxDir(sampleId, sampleType) + File.separator + sampleId + ".ms_table.tsv.gz");
 
         if(newJitterFile.isFile())
         {
@@ -61,9 +64,9 @@ public class MsIndelErrorPrep implements CategoryPrep
                 sampleId, newJitterFile.getName(), oldJitterFile.getName()));
     }
 
-    private List<JitterTableRow> loadJitterCountsTable(String sampleId) throws IOException
+    private List<JitterTableRow> loadJitterCountsTable(String sampleId, SampleType sampleType) throws IOException
     {
-        String filePath = findBackwardsCompatibleJitterFile(sampleId);
+        String filePath = findBackwardsCompatibleJitterFile(sampleId, sampleType);
         Collection<JitterCountsTable> tables = JitterCountsTableFile.read(filePath);
 
         List<JitterTableRow> tablesFlattened = new ArrayList<>();
@@ -110,19 +113,9 @@ public class MsIndelErrorPrep implements CategoryPrep
         return newTable;
     }
 
-    private static String getRepeatType(String repeatUnit)
+    private static String getRepeatTypeString(String repeatUnit)
     {
-        if(repeatUnit.matches("^\\w/\\w$"))
-            return repeatUnit + " repeat";
-
-        else if(repeatUnit.matches("^\\w{2}/.*"))
-            return "2bp repeat";
-
-        else if(repeatUnit.matches("^\\d+bp repeat"))
-            return "≥3bp repeat";
-
-        else
-            throw new IllegalArgumentException("Unexpected repeat unit: " + repeatUnit);
+        return RepeatType.fromRepeatUnit(repeatUnit).displayName();
     }
 
     @VisibleForTesting
@@ -131,9 +124,9 @@ public class MsIndelErrorPrep implements CategoryPrep
         Map<String, List<JitterTableRow>> groupedTables = new LinkedHashMap<>();
         for(JitterTableRow row : table)
         {
-            String groupName = FeatureKey.formMultiFieldName(
+            String groupName = MultiFieldStringBuilder.formMultiField(
                     FIELD_CONSENSUS_TYPE, row.getConsensusType().toString(),
-                    FIELD_REPEAT_TYPE, getRepeatType(row.getRepeatUnit()),
+                    FIELD_REPEAT_TYPE, getRepeatTypeString(row.getRepeatUnit()),
                     FIELD_REF_NUM_UNITS, String.valueOf(row.refNumUnits())
             );
 
@@ -150,7 +143,7 @@ public class MsIndelErrorPrep implements CategoryPrep
 
             JitterTableRow newRow = new JitterTableRow(
                     oldFirstRow.refNumUnits(),
-                    getRepeatType(oldFirstRow.getRepeatUnit()),
+                    getRepeatTypeString(oldFirstRow.getRepeatUnit()),
                     oldFirstRow.getConsensusType()
             );
 
@@ -209,21 +202,27 @@ public class MsIndelErrorPrep implements CategoryPrep
             int insertionReadCount = row.getJitterReadCount(INSERTIONS_KEY);
             int indelReadCount = deletionReadCount + insertionReadCount;
 
-            String featureName = FeatureKey.formMultiFieldName(
+            String featureName = MultiFieldStringBuilder.formMultiField(
                     FIELD_CONSENSUS_TYPE, consensusType,
                     FIELD_REPEAT_TYPE, repeatType,
                     FIELD_REF_NUM_UNITS, refNumUnits
             );
 
             double indelPhredScore = calcPhredScore(indelReadCount, totalReadCount);
-            FeatureKey indelPhredKey = new FeatureKey(featureName, FeatureType.MS_INDEL_ERROR_RATES, SOURCE_TOOL);
-            indelPhredScores.add(new Feature(indelPhredKey, indelPhredScore));
+            if(!Double.isNaN(indelPhredScore))
+            {
+                Feature feature = new Feature(featureName, indelPhredScore, FeatureType.MS_INDEL_ERROR_RATES, SOURCE_TOOL);
+                indelPhredScores.add(feature);
+            }
 
             double insertionPhredScore = calcPhredScore(insertionReadCount, totalReadCount);
             double deletionPhredScore = calcPhredScore(deletionReadCount, totalReadCount);
             double indelPhredScoreDiff = deletionPhredScore - insertionPhredScore;
-            FeatureKey indelPhredScoreDiffKey = new FeatureKey(featureName, FeatureType.MS_INDEL_ERROR_BIAS, SOURCE_TOOL);
-            indelPhredScoreDiffs.add(new Feature(indelPhredScoreDiffKey, indelPhredScoreDiff));
+            if(!Double.isNaN(indelPhredScoreDiff))
+            {
+                Feature feature = new Feature(featureName, indelPhredScoreDiff, FeatureType.MS_INDEL_ERROR_BIAS, SOURCE_TOOL);
+                indelPhredScoreDiffs.add(feature);
+            }
         }
 
         List<Feature> features = new ArrayList<>();
@@ -234,9 +233,9 @@ public class MsIndelErrorPrep implements CategoryPrep
     }
 
     @Override
-    public List<Feature> extractSampleData(String sampleId) throws IOException
+    public List<Feature> extractSampleData(String sampleId, SampleType sampleType) throws IOException
     {
-        List<JitterTableRow> table = loadJitterCountsTable(sampleId);
+        List<JitterTableRow> table = loadJitterCountsTable(sampleId, sampleType);
 
         List<JitterTableRow> tableAggregated;
         tableAggregated = aggregateByJitter(table);

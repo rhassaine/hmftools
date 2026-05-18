@@ -13,11 +13,34 @@ import java.util.StringJoiner;
 import com.hartwig.hmftools.lilac.GeneSelector;
 import com.hartwig.hmftools.lilac.hla.HlaGene;
 
+import org.jetbrains.annotations.Nullable;
+
 public final class HlaComplexFile
 {
     private HlaComplexFile() {}
 
-    public static String header(final GeneSelector genes)
+    public static String header()
+    {
+        StringJoiner sb = new StringJoiner(TSV_DELIM);
+        sb.add("Genes");
+        sb.add("Score");
+        sb.add("ComplexityPenalty");
+        sb.add("Complexity");
+        sb.add("HomozygousCount");
+        sb.add("CohortFrequencyPenalty");
+        sb.add("CohortFrequency");
+        sb.add("RecoveryCount");
+        sb.add("WildcardCount");
+        sb.add("TotalCoverage");
+        sb.add("UniqueCoverage");
+        sb.add("SharedCoverage");
+        sb.add("WildCoverage");
+        sb.add("AlleleInfo");
+
+        return sb.toString();
+    }
+
+    public static String infoHeader(final GeneSelector genes)
     {
         StringJoiner sb = new StringJoiner(TSV_DELIM);
         sb.add("Score");
@@ -41,32 +64,28 @@ public final class HlaComplexFile
         return sb.toString();
     }
 
-    public static void writeToFile(final String fileName, final GeneSelector genes, final Iterable<ComplexCoverage> coverages)
+    public static void writeToFile(final BufferedWriter writer, final GeneSelector currentGenes, final Iterable<ComplexCoverage> coverages)
     {
         try
         {
-            BufferedWriter writer = createBufferedWriter(fileName, false);
-
-            writer.write(header(genes));
-            writer.newLine();
-
             for(ComplexCoverage coverage : coverages)
             {
-                writer.write(asString(coverage));
+                writer.write(asString(currentGenes, coverage));
                 writer.newLine();
             }
-
-            writer.close();
         }
-        catch(IOException e)
+        catch(Exception e)
         {
-            LL_LOGGER.error("failed to write {}: {}", fileName, e.toString());
+            LL_LOGGER.error("failed to write to HLA complex file: {}", e.toString());
         }
     }
 
-    public static String asString(final ComplexCoverage coverage)
+    public static String asString(@Nullable final GeneSelector genes, final ComplexCoverage coverage)
     {
         StringJoiner sj = new StringJoiner(TSV_DELIM);
+
+        if(genes != null)
+            sj.add(genes.name());
 
         sj.add(String.format("%.2f", coverage.getScore()));
         sj.add(String.format("%.2f", coverage.getComplexityPenalty()));
@@ -80,25 +99,50 @@ public final class HlaComplexFile
         sj.add(String.valueOf(coverage.UniqueCoverage));
         sj.add(String.valueOf(coverage.SharedCoverage));
         sj.add(String.valueOf(coverage.WildCoverage));
-        coverage.getAlleleCoverage().forEach(x -> sj.add(x.toString()));
+        if(genes != null)
+        {
+            StringJoiner alleleInfoBuilder = new StringJoiner(";");
+            coverage.getAlleleCoverage().forEach(x -> alleleInfoBuilder.add(x.toString()));
+            sj.add(alleleInfoBuilder.toString());
+        }
+        else
+        {
+            coverage.getAlleleCoverage().forEach(x -> sj.add(x.toString()));
+        }
 
         return sj.toString();
+    }
+
+    @Nullable
+    public static BufferedWriter initialiseRefFragmentWriter(final String filename)
+    {
+        try
+        {
+            BufferedWriter writer = createBufferedWriter(filename);
+
+            StringJoiner sb = new StringJoiner(TSV_DELIM);
+            sb.add("Complex");
+            sb.add("FragmentId");
+            sb.add("FragmentCoords");
+            sb.add("Type");
+            sb.add("FullAlleles");
+            sb.add("WildAlleles");
+            writer.write(sb.toString());
+            writer.newLine();
+
+            return writer;
+        }
+        catch(IOException e)
+        {
+            LL_LOGGER.error("failed to write to {}: {}", filename, e.toString());
+            return null;
+        }
     }
 
     public static void writeFragmentAssignment(
             final BufferedWriter writer, final Iterable<ComplexCoverage> coverages, final List<FragmentAlleles> fragAlleles)
             throws IOException
     {
-        StringJoiner sb = new StringJoiner(TSV_DELIM);
-        sb.add("Complex");
-        sb.add("FragmentId");
-        sb.add("FragmentCoords");
-        sb.add("Type");
-        sb.add("FullAlleles");
-        sb.add("WildAlleles");
-        writer.write(sb.toString());
-        writer.newLine();
-
         for(ComplexCoverage complexCoverage : coverages)
         {
             StringJoiner complexAlleles = new StringJoiner(ITEM_DELIM);

@@ -6,15 +6,19 @@ import com.google.common.collect.Lists;
 
 public enum CategoryType
 {
-    PURITY,
+    // ordering matters as described below where comparers share loaded data
+
+    PURITY, // CN is dependent on purity
     DRIVER,
     COPY_NUMBER,
     GENE_COPY_NUMBER,
     SOMATIC_VARIANT,
     GERMLINE_VARIANT,
     GERMLINE_AMP_DEL,
-    FUSION,
+
     DISRUPTION,
+    FUSION, // dependent on disruptions
+
     GERMLINE_SV,
     CUPPA,
     CUPPA_IMAGE,
@@ -30,7 +34,13 @@ public enum CategoryType
     CDR3_SEQUENCE,
     CDR3_LOCUS_SUMMARY,
     TELOMERE_LENGTH,
-    V_CHORD;
+    V_CHORD,
+    SIGS,
+    RNA_SUMMARY,
+    RNA_GENE_DATA,
+    RNA_TRANSCRIPT_DATA,
+    NOVEL_SPLICE_JUNCTION,
+    RNA_FUSION;
 
     public static final String ALL_CATEGORIES = "ALL";
     public static final String LINX_CATEGORIES = "LINX";
@@ -49,6 +59,6 @@ public enum CategoryType
 
     public static List<CategoryType> panelCategories()
     {
-        return Lists.newArrayList(PURITY, DRIVER, SOMATIC_VARIANT, FUSION, DISRUPTION, V_CHORD);
+        return Lists.newArrayList(PURITY, DRIVER, SOMATIC_VARIANT, FUSION, DISRUPTION);
     }
 }

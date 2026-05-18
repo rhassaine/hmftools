@@ -24,7 +24,7 @@ import static com.hartwig.hmftools.bamtools.metrics.FlagStatType.SECONDARY;
 import static com.hartwig.hmftools.bamtools.metrics.FlagStatType.SINGLETON;
 import static com.hartwig.hmftools.bamtools.metrics.FlagStatType.SUPPLEMENTARY;
 import static com.hartwig.hmftools.bamtools.metrics.FlagStatType.TOTAL;
-import static com.hartwig.hmftools.bamtools.metrics.OffTargetFragments.writeOverlapCounts;
+import static com.hartwig.hmftools.bamtools.metrics.OffTargetAnalyser.writeOverlapCounts;
 import static com.hartwig.hmftools.common.metrics.BamFlagStats.FLAGSTAT_BOTH_MAPPED;
 import static com.hartwig.hmftools.common.metrics.BamFlagStats.FLAGSTAT_DUPLICATE;
 import static com.hartwig.hmftools.common.metrics.BamFlagStats.FLAGSTAT_MAPPED;
@@ -68,6 +68,8 @@ public class MetricsWriter
     private BufferedWriter mTargetRegionsWriter;
     private BufferedWriter mOffTargetHighFragmentOverlapWriter;
 
+    private static final int LONG_DISTRIBUTION_THRESHOLD = 3000;
+
     public MetricsWriter(final MetricsConfig config)
     {
         mTargetRegionsWriter = !config.TargetRegions.isEmpty() ? TargetRegionStats.initialiseWriter(config) : null;
@@ -75,7 +77,7 @@ public class MetricsWriter
         mPartitionWriter = !config.OnlyTargetRegions ? initialisePartitionWriter(config) : null;
 
         mOffTargetHighFragmentOverlapWriter = !config.TargetRegions.isEmpty() && config.HighFragmentOverlapThreshold > 0 ?
-                OffTargetFragments.initialiseEnrichedRegionWriter(config) : null;
+                OffTargetAnalyser.initialiseEnrichedRegionWriter(config) : null;
     }
 
     public BufferedWriter targetRegionsWriter() { return mTargetRegionsWriter; }
@@ -125,6 +127,7 @@ public class MetricsWriter
                     .totalReads(readCounts.Total)
                     .duplicateReads(readCounts.Duplicates)
                     .dualStrandReads(readCounts.DualStrand)
+                    .offTargetReads(readCounts.OffTarget)
                     .meanCoverage(metrics.statistics().Mean)
                     .sdCoverage(metrics.statistics().StandardDeviation)
                     .medianCoverage((int)round(metrics.statistics().Median))
@@ -157,16 +160,18 @@ public class MetricsWriter
             List<ValueFrequency> coverageLevels = Lists.newArrayList();
 
             // collapse for long distributions
-            if(metrics.CoverageFrequency.length > 3000)
+            if(metrics.CoverageFrequency.length > LONG_DISTRIBUTION_THRESHOLD)
             {
                 int currentCoverage = 0;
                 long coverageTotal = metrics.CoverageFrequency[0];
 
+                int[] coverageBuckets = CoverageMetrics.createCoverageBuckets(metrics.CoverageFrequency.length);
+
                 for(int i = 1; i < metrics.CoverageFrequency.length; ++i)
                 {
-                    int nextCoverage = CoverageMetrics.getCoverageBucket(i);
+                    int nextCoverage = CoverageMetrics.getNextCoverageBucket(i, coverageBuckets);
 
-                    if(nextCoverage > currentCoverage)
+                    if(currentCoverage < nextCoverage)
                     {
                         coverageLevels.add(new ValueFrequency(currentCoverage, coverageTotal));
 

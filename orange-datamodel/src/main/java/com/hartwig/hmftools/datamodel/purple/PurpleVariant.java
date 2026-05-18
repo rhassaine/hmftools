@@ -2,6 +2,8 @@ package com.hartwig.hmftools.datamodel.purple;
 
 import java.util.List;
 
+import com.hartwig.hmftools.datamodel.common.AllelicDepth;
+
 import org.immutables.gson.Gson;
 import org.immutables.value.Value;
 import org.jetbrains.annotations.NotNull;
@@ -29,6 +31,8 @@ public interface PurpleVariant
     @NotNull
     String alt();
 
+    double driverLikelihood();
+
     @NotNull
     PurpleCodingEffect worstCodingEffect();
 
@@ -42,22 +46,17 @@ public interface PurpleVariant
     HotspotType hotspot();
 
     @NotNull
-    PurpleAllelicDepth tumorDepth();
+    AllelicDepth tumorDepth();
 
     @Nullable
-    PurpleAllelicDepth rnaDepth();
+    AllelicDepth rnaDepth();
 
     double adjustedCopyNumber();
-
     double adjustedVAF();
-
     double minorAlleleCopyNumber();
-
     double variantCopyNumber();
-
     boolean biallelic();
 
-    // make regular double in the future
     @Nullable
     Double biallelicProbability();
 
@@ -65,11 +64,23 @@ public interface PurpleVariant
     PurpleGenotypeStatus genotypeStatus();
 
     int repeatCount();
-
     double subclonalLikelihood();
 
     @Nullable
+    PurpleSomaticLikelihood somaticLikelihood();
+
+    @Nullable
     List<Integer> localPhaseSets();
+
+    // germline fields
+    @Nullable
+    String clinvarPathogenicity();
+
+    @Nullable
+    Double gnomadFrequency();
+
+    @Nullable
+    String plotFilename();
 
     @Value.Derived
     default boolean reported()

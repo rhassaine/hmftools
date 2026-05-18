@@ -1,5 +1,7 @@
 package com.hartwig.hmftools.common.utils;
 
+import static java.lang.Math.max;
+import static java.lang.Math.min;
 import static java.lang.Math.pow;
 
 import java.util.Collection;
@@ -117,9 +119,7 @@ public final class Doubles
         int count = values.size();
 
         if(count == 0)
-        {
             return 0;
-        }
 
         return count % 2 == 0 ? (values.get(count / 2) + values.get(count / 2 - 1)) / 2 : values.get(count / 2);
     }
@@ -131,9 +131,7 @@ public final class Doubles
         int count = values.size();
 
         if(count == 0)
-        {
             return 0;
-        }
 
         return count % 2 == 0 ? (values.get(count / 2) + values.get(count / 2 - 1)) / 2 : values.get(count / 2);
     }
@@ -142,6 +140,12 @@ public final class Doubles
     {
         double logValue = Math.round(pow(10, decimalPlaces));
         return Math.round(value * logValue) / logValue;
+    }
+
+    public static double clamp(double val, double min, double max)
+    {
+        // use Math.clamp in java 21
+        return max(min(val, max), min);
     }
 
     public static double interpolatedMedian(Collection<Double> input)

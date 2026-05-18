@@ -85,6 +85,13 @@ public class SageApplication implements AutoCloseable
 
     private void run() throws IOException
     {
+        if(mConfig.Common.Visualiser.visualiserOnlyMode() && !mConfig.Common.Visualiser.hasVariants())
+        {
+            SG_LOGGER.info("no reportable variants to visualise, exiting");
+            close();
+            return;
+        }
+
         long startTimeMs = System.currentTimeMillis();
 
         SageCommon.setReadLength(mConfig.Common, mRefData.PanelWithHotspots, mConfig.TumorBams.get(0));
@@ -105,7 +112,7 @@ public class SageApplication implements AutoCloseable
         MsiJitterCalcs msiJitterCalcs = MsiJitterCalcs.build(
                 combinedSampleIds,
                 !mConfig.Common.SkipMsiJitter ? mConfig.Common.JitterBqrDir : null,
-                mConfig.Common.Quality.HighDepthMode);
+                mConfig.Common.HighDepthMode);
 
         final SAMSequenceDictionary dictionary = dictionary();
         for(SAMSequenceRecord samSequenceRecord : dictionary.getSequences())

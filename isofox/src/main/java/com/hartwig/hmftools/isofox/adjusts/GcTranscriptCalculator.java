@@ -4,8 +4,8 @@ import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.String.format;
 
+import static com.hartwig.hmftools.common.utils.file.FileDelimiters.inferFileDelimiter;
 import static com.hartwig.hmftools.isofox.IsofoxConfig.ISF_LOGGER;
-import static com.hartwig.hmftools.isofox.results.ResultsWriter.DELIMITER;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -54,17 +54,17 @@ public class GcTranscriptCalculator
         // use expected GC ratio counts and 1st-pass transcript fits to derive expected GC counts
         final double[] frequencies = mTranscriptFitGcCounts.getCounts();
 
-        for(final GeneCollectionSummary geneSummary : geneSummaries)
+        for(GeneCollectionSummary geneSummary : geneSummaries)
         {
-            final Map<String,Double> fitAllocations = geneSummary.getFitAllocations();
+            Map<String,Double> fitAllocations = geneSummary.getFitAllocations();
 
             for(Map.Entry<String,Double> entry : fitAllocations.entrySet())
             {
-                final String transName = entry.getKey();
+                String transName = entry.getKey();
 
                 double fitAlloc = entry.getValue();
 
-                final GcRatioCounts transGcCounts = mTranscriptGcRatioCache.get(transName);
+                GcRatioCounts transGcCounts = mTranscriptGcRatioCache.get(transName);
 
                 if(transGcCounts == null)
                 {
@@ -73,7 +73,7 @@ public class GcTranscriptCalculator
                     return;
                 }
 
-                final double[] transFrequencies = transGcCounts.getCounts();
+                double[] transFrequencies = transGcCounts.getCounts();
 
                 for(int i = 0; i < frequencies.length; ++i)
                 {
@@ -122,7 +122,7 @@ public class GcTranscriptCalculator
             else
                 mGcRatioAdjustments[i] = MIN_ADJUST_FACTOR;
 
-            ISF_LOGGER.debug(format("ratio(%.2f) actual(%.6f) expected(%.6f) adjustment(%.3f)",
+            ISF_LOGGER.trace(format("ratio(%.2f) actual(%.6f) expected(%.6f) adjustment(%.3f)",
                     globalGcCounts.getRatios()[i], actualPerc, expectedPerc, mGcRatioAdjustments[i]));
         }
     }
@@ -138,11 +138,12 @@ public class GcTranscriptCalculator
         try
         {
             BufferedReader fileReader = new BufferedReader(new FileReader(mConfig.ExpGcRatiosFile));
+            String fileDelim = inferFileDelimiter(mConfig.ExpGcRatiosFile);
 
             // skip field names
             String line = fileReader.readLine();
 
-            if (line == null)
+            if(line == null)
             {
                 ISF_LOGGER.error("empty expected GC ratios file({})", mConfig.ExpGcRatiosFile);
                 return;
@@ -153,21 +154,21 @@ public class GcTranscriptCalculator
 
             while ((line = fileReader.readLine()) != null)
             {
-                String[] items = line.split(DELIMITER, -1);
+                String[] values = line.split(fileDelim, -1);
 
-                if (items.length != expectedColCount)
+                if(values.length != expectedColCount)
                 {
-                    ISF_LOGGER.error("invalid exp GC ratio data length({}) vs expected({}): {}", items.length, expectedColCount, line);
+                    ISF_LOGGER.error("invalid exp GC ratio data length({}) vs expected({}): {}", values.length, expectedColCount, line);
                     return;
                 }
 
-                final String transName = items[0];
+                final String transName = values[0];
                 gcRatioCounts = new GcRatioCounts();
                 final double[] frequencies = gcRatioCounts.getCounts();
 
-                for(int i = 1; i < items.length; ++i)
+                for(int i = 1; i < values.length; ++i)
                 {
-                    double counts = Double.parseDouble(items[i]);
+                    double counts = Double.parseDouble(values[i]);
                     frequencies[i - 1] = counts;
                 }
 

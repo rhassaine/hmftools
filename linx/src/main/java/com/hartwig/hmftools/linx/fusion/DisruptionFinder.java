@@ -1,6 +1,5 @@
 package com.hartwig.hmftools.linx.fusion;
 
-import static com.hartwig.hmftools.common.driver.DriverCategory.TSG;
 import static com.hartwig.hmftools.common.driver.DriverType.HOM_DEL_DISRUPTION;
 import static com.hartwig.hmftools.common.driver.DriverType.HOM_DUP_DISRUPTION;
 import static com.hartwig.hmftools.common.gene.TranscriptCodingType.UTR_3P;
@@ -13,7 +12,7 @@ import static com.hartwig.hmftools.common.sv.StartEndIterator.SE_END;
 import static com.hartwig.hmftools.common.sv.StartEndIterator.SE_START;
 import static com.hartwig.hmftools.common.sv.StartEndIterator.isStart;
 import static com.hartwig.hmftools.common.sv.StructuralVariantType.DUP;
-import static com.hartwig.hmftools.linx.CohortDataWriter.cohortDataFilename;
+import static com.hartwig.hmftools.linx.cohort.CohortDataWriter.cohortDataFilename;
 import static com.hartwig.hmftools.linx.LinxConfig.LNX_LOGGER;
 import static com.hartwig.hmftools.linx.analysis.SvUtilities.formatJcn;
 import static com.hartwig.hmftools.linx.annotators.PseudoGeneFinder.isPseudogeneDeletion;
@@ -23,7 +22,6 @@ import static com.hartwig.hmftools.linx.visualiser.file.VisGeneAnnotationType.DI
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,9 +42,9 @@ import com.hartwig.hmftools.common.gene.TranscriptData;
 import com.hartwig.hmftools.common.purple.ReportedStatus;
 import com.hartwig.hmftools.linx.gene.BreakendGeneData;
 import com.hartwig.hmftools.linx.gene.BreakendTransData;
-import com.hartwig.hmftools.linx.CohortFileInterface;
+import com.hartwig.hmftools.linx.cohort.CohortFileInterface;
 import com.hartwig.hmftools.linx.LinxConfig;
-import com.hartwig.hmftools.linx.CohortDataWriter;
+import com.hartwig.hmftools.linx.cohort.CohortDataWriter;
 import com.hartwig.hmftools.linx.chaining.SvChain;
 import com.hartwig.hmftools.linx.germline.GermlineDisruptions;
 import com.hartwig.hmftools.linx.types.DbPair;
@@ -100,7 +98,6 @@ public class DisruptionFinder implements CohortFileInterface
 
         for(DriverGene driverGene : driverGenes)
         {
-            // TODO: take all genes and then later on set reportable status
             if(onlyReportable && !driverGene.reportDisruption())
                 continue;
 
@@ -292,15 +289,18 @@ public class DisruptionFinder implements CohortFileInterface
         }
         else if(trans1.breakendGeneData().varId() == trans2.breakendGeneData().varId())
         {
-            // events wholly contained within the 3'UTR region are not disruptive
-            if(trans1.codingType() == UTR_3P && trans2.codingType() == UTR_3P)
+            if(mIsGermline) // only allow 3'UTR DEL-DUPs to be disruptive for somatics
             {
-                markNonDisruptive = true;
-            }
-            else if(trans1.codingType() == UTR_3P || trans2.codingType() == UTR_3P)
-            {
-                if(trans1.breakendGeneData().svType() == DUP)
+                // events wholly contained within the 3'UTR region are not disruptive
+                if(trans1.codingType() == UTR_3P && trans2.codingType() == UTR_3P)
+                {
                     markNonDisruptive = true;
+                }
+                else if(trans1.codingType() == UTR_3P || trans2.codingType() == UTR_3P)
+                {
+                    if(trans1.breakendGeneData().svType() == DUP)
+                        markNonDisruptive = true;
+                }
             }
         }
 
@@ -768,7 +768,7 @@ public class DisruptionFinder implements CohortFileInterface
                 if(be == SE_END && var.isSglBreakend())
                     continue;
 
-                final List<BreakendGeneData> tsgGenesList = var.getGenesList(isStart(be)).stream()
+                List<BreakendGeneData> tsgGenesList = var.getGenesList(isStart(be)).stream()
                         .filter(x -> matchesDisruptionGene(x.geneId())).collect(Collectors.toList());
 
                 if(tsgGenesList.isEmpty())
@@ -796,7 +796,7 @@ public class DisruptionFinder implements CohortFileInterface
                         transcript.setReportableDisruption(true);
 
                         SvDisruptionData disruptionData = new SvDisruptionData(
-                                var,  gene.isStart(), gene.GeneData, transcript.TransData,
+                                var, gene.isStart(), gene.GeneData, transcript.TransData,
                                 new int[] { transcript.ExonUpstream, transcript.ExonDownstream },
                                 transcript.codingType(), transcript.regionType(), transcript.undisruptedCopyNumber(),
                                 breakend.copyNumber());
@@ -845,7 +845,7 @@ public class DisruptionFinder implements CohortFileInterface
             if(driverGene == null)
                 continue;
 
-            ReportedStatus reportedStatus = driverGene.reportDisruption() ? ReportedStatus.REPORTED : ReportedStatus.NOT_REPORTED;
+                ReportedStatus reportedStatus = driverGene.reportDisruption() ? ReportedStatus.REPORTED : ReportedStatus.NOT_REPORTED;
 
             DriverCatalog driverCatalog = ImmutableDriverCatalog.builder()
                     .driver(DriverType.DISRUPTION)

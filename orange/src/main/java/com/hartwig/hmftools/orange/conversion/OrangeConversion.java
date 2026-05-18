@@ -4,16 +4,12 @@ import com.hartwig.hmftools.common.chord.ChordData;
 import com.hartwig.hmftools.common.doid.DoidNode;
 import com.hartwig.hmftools.common.metrics.BamFlagStats;
 import com.hartwig.hmftools.common.metrics.BamMetricSummary;
-import com.hartwig.hmftools.common.hla.LilacSummaryData;
 import com.hartwig.hmftools.common.virus.VirusType;
 import com.hartwig.hmftools.datamodel.chord.ChordRecord;
 import com.hartwig.hmftools.datamodel.chord.ChordStatus;
 import com.hartwig.hmftools.datamodel.chord.ImmutableChordRecord;
+import com.hartwig.hmftools.datamodel.driver.DriverInterpretation;
 import com.hartwig.hmftools.datamodel.flagstat.ImmutableFlagstat;
-import com.hartwig.hmftools.datamodel.hla.ImmutableLilacAllele;
-import com.hartwig.hmftools.datamodel.hla.ImmutableLilacRecord;
-import com.hartwig.hmftools.datamodel.hla.LilacAllele;
-import com.hartwig.hmftools.datamodel.hla.LilacRecord;
 import com.hartwig.hmftools.datamodel.metrics.ImmutableWGSMetrics;
 import com.hartwig.hmftools.datamodel.orange.ImmutableOrangeDoidNode;
 import com.hartwig.hmftools.datamodel.orange.OrangeDoidNode;
@@ -23,13 +19,9 @@ import com.hartwig.hmftools.datamodel.virus.ImmutableVirusInterpreterEntry;
 import com.hartwig.hmftools.datamodel.virus.VirusBreakendQCStatus;
 import com.hartwig.hmftools.datamodel.virus.VirusInterpretation;
 import com.hartwig.hmftools.datamodel.virus.VirusInterpreterEntry;
-import com.hartwig.hmftools.datamodel.virus.VirusLikelihoodType;
-
-import org.jetbrains.annotations.NotNull;
 
 public final class OrangeConversion
 {
-    @NotNull
     public static com.hartwig.hmftools.datamodel.flagstat.Flagstat convert(final BamFlagStats flagstat)
     {
         return ImmutableFlagstat.builder()
@@ -40,7 +32,6 @@ public final class OrangeConversion
                 .build();
     }
 
-    @NotNull
     public static com.hartwig.hmftools.datamodel.metrics.WGSMetrics convert(final BamMetricSummary metricsSummary)
     {
         return ImmutableWGSMetrics.builder()
@@ -59,43 +50,12 @@ public final class OrangeConversion
                 .build();
     }
 
-    @NotNull
-    public static OrangeDoidNode convert(@NotNull DoidNode doidNode)
+    public static OrangeDoidNode convert(final DoidNode doidNode)
     {
         return ImmutableOrangeDoidNode.builder().doid(doidNode.doid()).doidTerm(doidNode.doidTerm()).build();
     }
 
-    @NotNull
-    public static LilacRecord convert(@NotNull LilacSummaryData lilacSummaryData, boolean hasRef, boolean hasRna)
-    {
-        return ImmutableLilacRecord.builder()
-                .qc(lilacSummaryData.qc())
-                .alleles(() -> lilacSummaryData.alleles()
-                        .stream()
-                        .map(allele -> OrangeConversion.convert(allele, hasRef, hasRna))
-                        .iterator())
-                .build();
-    }
-
-    @NotNull
-    public static LilacAllele convert(@NotNull com.hartwig.hmftools.common.hla.LilacAllele allele, boolean hasRef, boolean hasRna)
-    {
-        return ImmutableLilacAllele.builder()
-                .allele(allele.allele())
-                .tumorCopyNumber(allele.tumorCopyNumber())
-                .refFragments(hasRef ? allele.refFragments() : null)
-                .tumorFragments(allele.tumorFragments())
-                .rnaFragments(hasRna ? allele.rnaFragments() : null)
-                .somaticMissense(allele.somaticMissense())
-                .somaticNonsenseOrFrameshift(allele.somaticNonsenseOrFrameshift())
-                .somaticSplice(allele.somaticSplice())
-                .somaticSynonymous(allele.somaticSynonymous())
-                .somaticInframeIndel(allele.somaticInframeIndel())
-                .build();
-    }
-
-    @NotNull
-    public static VirusInterpreterEntry convert(@NotNull com.hartwig.hmftools.common.virus.AnnotatedVirus annotatedVirus)
+    public static VirusInterpreterEntry convert(final com.hartwig.hmftools.common.virus.AnnotatedVirus annotatedVirus)
     {
         VirusType interpretation = annotatedVirus.interpretation();
         return ImmutableVirusInterpreterEntry.builder()
@@ -107,12 +67,11 @@ public final class OrangeConversion
                 .meanCoverage(annotatedVirus.meanCoverage())
                 .expectedClonalCoverage(annotatedVirus.expectedClonalCoverage())
                 .reported(annotatedVirus.reported())
-                .driverLikelihood(VirusLikelihoodType.valueOf(annotatedVirus.virusDriverLikelihoodType().name()))
+                .driverInterpretation(DriverInterpretation.valueOf(annotatedVirus.virusDriverLikelihoodType().name()))
                 .build();
     }
 
-    @NotNull
-    public static ChordRecord convert(@NotNull ChordData chordData)
+    public static ChordRecord convert(final ChordData chordData)
     {
         return ImmutableChordRecord.builder()
                 .brca1Value(chordData.BRCA1Value())
@@ -123,8 +82,7 @@ public final class OrangeConversion
                 .build();
     }
 
-    @NotNull
-    public static PeachGenotype convert(@NotNull com.hartwig.hmftools.common.peach.PeachGenotype peachGenotype)
+    public static PeachGenotype convert(final com.hartwig.hmftools.common.peach.PeachGenotype peachGenotype)
     {
         return ImmutablePeachGenotype.builder()
                 .gene(peachGenotype.gene())

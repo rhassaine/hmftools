@@ -1,10 +1,6 @@
 {
   "sampleId": "Test",
-  "samplingDate": {
-    "year": 2025,
-    "month": 4,
-    "day": 22
-  },
+  "samplingDate": "2022-01-20",
   "experimentType": "WHOLE_GENOME",
   "configuredPrimaryTumor": [
     {
@@ -14,51 +10,6 @@
   ],
   "refGenomeVersion": "V37",
   "pipelineVersion": "6.0",
-  "refSample": {
-    "metrics": {
-      "meanCoverage": 31.256,
-      "sdCoverage": 9.43,
-      "medianCoverage": 32,
-      "madCoverage": 5,
-      "pctExcAdapter": 0.0,
-      "pctExcMapQ": 0.01978,
-      "pctExcDupe": 0.10657,
-      "pctExcUnpaired": 0.00284,
-      "pctExcBaseQ": 1.3E-4,
-      "pctExcOverlap": 0.00498,
-      "pctExcCapped": 1.7E-4,
-      "pctExcTotal": 0.13447
-    },
-    "flagstat": {
-      "uniqueReadCount": 691880238,
-      "secondaryCount": 0,
-      "supplementaryCount": 871753,
-      "mappedProportion": 0.995733
-    }
-  },
-  "tumorSample": {
-    "metrics": {
-      "meanCoverage": 107.641,
-      "sdCoverage": 34.909,
-      "medianCoverage": 109,
-      "madCoverage": 23,
-      "pctExcAdapter": 0.0,
-      "pctExcMapQ": 0.0191,
-      "pctExcDupe": 0.1461,
-      "pctExcUnpaired": 0.00296,
-      "pctExcBaseQ": 1.4E-4,
-      "pctExcOverlap": 0.00743,
-      "pctExcCapped": 0.00328,
-      "pctExcTotal": 0.17901
-    },
-    "flagstat": {
-      "uniqueReadCount": 2513301754,
-      "secondaryCount": 0,
-      "supplementaryCount": 3179178,
-      "mappedProportion": 0.995531
-    }
-  },
-  "germlineMVLHPerGene": {},
   "purple": {
     "fit": {
       "qc": {
@@ -82,14 +33,6 @@
       "minPloidy": 3.05,
       "maxPloidy": 3.15
     },
-    "tumorStats": {
-      "maxDiploidProportion": 0.0211,
-      "hotspotMutationCount": 3,
-      "hotspotStructuralVariantCount": 0,
-      "smallVariantAlleleReadCount": 2287733,
-      "structuralVariantTumorFragmentCount": 6408,
-      "bafCount": 682755
-    },
     "characteristics": {
       "wholeGenomeDuplication": true,
       "microsatelliteIndelsPerMb": 0.0951,
@@ -98,7 +41,8 @@
       "tumorMutationalBurdenStatus": "HIGH",
       "tumorMutationalLoad": 184,
       "tumorMutationalLoadStatus": "HIGH",
-      "svTumorMutationalBurden": 86
+      "svTumorMutationalBurden": 86,
+      "lohPercentage": 0
     },
     "somaticDrivers": [
       {
@@ -110,6 +54,14 @@
         "reportedStatus": "REPORTED",
         "likelihoodMethod": "HOTSPOT",
         "isCanonical": true
+      },
+      {
+        "driverLikelihood": 1.0,
+        "gene": "PTEN",
+        "isCanonical": true,
+        "likelihoodMethod": "DEL",
+        "transcript": "ENST00000371953",
+        "type": "DEL"
       }
     ],
     "germlineDrivers": [],
@@ -121,6 +73,7 @@
         "position": 198266779,
         "ref": "G",
         "alt": "A",
+        "driverLikelihood": 1.0,
         "worstCodingEffect": "MISSENSE",
         "canonicalImpact": {
           "transcript": "ENST00000335508",
@@ -183,24 +136,13 @@
       }
     ],
     "germlineVariants": [],
-    "somaticCopyNumbers": [
+    "armCopyNumberAbberations": [
       {
-        "chromosome": "1",
-        "start": 1,
-        "end": 87337011,
-        "averageTumorCopyNumber": 2.8141
-      }
-    ],
-    "somaticGeneCopyNumbers": [
-      {
-        "gene": "DDX11L1",
-        "chromosome": "1",
-        "chromosomeBand": "p36.33",
-        "transcript": "ENST00000456328",
-        "isCanonical": true,
-        "minCopyNumber": 2.8141,
-        "maxCopyNumber": 2.8141,
-        "minMinorAlleleCopyNumber": 0.8112
+        "chromosome": "12",
+        "arm": "P",
+        "type": "GAIN",
+        "copyNumber": 2.0,
+        "relativeCopyNumber": 1.7
       }
     ],
     "somaticGainsDels": [
@@ -211,8 +153,15 @@
         "chromosomeBand": "q23.31",
         "transcript": "ENST00000371953",
         "isCanonical": true,
-        "minCopies": 0.0,
-        "maxCopies": 2.0158
+        "geneRange": "FULL",
+        "minCopyNumber": 0.0,
+        "maxCopyNumber": 2.0158,
+        "relativeCopyNumber": 0.1,
+        "armCopyNumber": 1.0,
+        "minMinorAlleleCopies": 0,
+        "tpm": 0,
+        "tpmPercentile": 0,
+        "tpmFoldChange": 0
       }
     ],
     "germlineGainsDels": []
@@ -293,19 +242,16 @@
     ],
     "fusions": [
       {
-        "geneStart": "DMD",
-        "geneContextStart": "Exon 67",
-        "geneTranscriptStart": "ENST00000357033",
-        "geneEnd": "DMD",
-        "geneContextEnd": "Exon 70",
-        "geneTranscriptEnd": "ENST00000357033",
-        "reported": true,
+        "geneUp": "DMD",
+        "clusterId": 0,
+        "contextUp": "Exon 67",
+        "transcriptUp": "ENST00000357033",
+        "geneDown": "DMD",
+        "contextDown": "Exon 70",
+        "transcriptDown": "ENST00000357033",
         "reportedType": "NONE",
-        "unreportedReasons": [
-          "NOT_KNOWN"
-        ],
         "phased": "INFRAME",
-        "driverLikelihood": "NA",
+        "driverInterpretation": "HIGH",
         "fusedExonUp": 67,
         "fusedExonDown": 70,
         "chainLinks": 0,
@@ -319,8 +265,10 @@
       {
         "id": 190,
         "svId": 174,
+        "clusterId": 0,
         "gene": "PTEN",
         "chromosome": "10",
+        "position": 1000,
         "chromosomeBand": "",
         "transcript": "ENST00000371953",
         "isCanonical": true,
@@ -335,27 +283,20 @@
         "orientation": 1,
         "exonUp": 5,
         "exonDown": 6,
-        "junctionCopyNumber": 2.00875
+        "junctionCopyNumber": 2.00875,
+        "driverType": "HOM_DEL_DISRUPTION",
+        "driverLikelihood": 1.0
       }
     ],
-    "germlineBreakends": [],
-    "somaticHomozygousDisruptions": [],
-    "germlineHomozygousDisruptions": []
+    "germlineBreakends": []
   },
-  "wildTypeGenes": [
-    {
-      "gene": "GENE1"
-    },
-    {
-      "gene": "GENE2"
-    }
-  ],
   "isofox": null,
   "lilac": {
-    "qc": "PASS",
     "alleles": [
       {
+        "geneClass": "PASS",
         "allele": "A*01:01",
+        "qcStatus": "PASS",
         "tumorCopyNumber": 2.0,
         "refFragments": 210,
         "tumorFragments": 1609,
@@ -912,30 +853,21 @@
       "percent": 0.12212
     }
   ],
-  "cohortEvaluations": {
-    "SV_TMB": {
-      "cancerType": "Skin",
-      "panCancerPercentile": 0.22,
-      "cancerTypePercentile": 0.34
-    }
-  },
   "plots": {
-    "sageReferenceBQRPlot": "plot/ref_sample.sage.bqr.png",
-    "sageTumorBQRPlot": "plot/tumor_sample.sage.bqr.png",
-    "purpleInputPlot": "plot/tumor_sample.input.png",
+    "purpleInputCircosPlot": "plot/tumor_sample.input.png",
     "purpleFinalCircosPlot": "plot/tumor_sample.circos.png",
     "purpleClonalityPlot": "plot/tumor_sample.somatic.clonality.png",
     "purpleCopyNumberPlot": "plot/tumor_sample.copynumber.png",
+    "purpleMinorAlleleMapPlot": "plot/tumor_sample.map.png",
     "purpleVariantCopyNumberPlot": "plot/tumor_sample.somatic.png",
     "purplePurityRangePlot": "plot/tumor_sample.purity.range.png",
-    "purpleKataegisPlot": "plot/tumor_sample.somatic.rainfall.png",
+    "purpleRainfallPlot": "plot/tumor_sample.somatic.rainfall.png",
     "linxDriverPlots": [
       "plot/tumor_sample.cluster3.png",
       "plot/tumor_sample.cluster2.png",
       "plot/tumor_sample.cluster1.png"
     ],
-    "cuppaSummaryPlot": "plot/tumor_sample.cuppa.vis.png",
-    "cuppaFeaturePlot": null,
-    "cuppaChartPlot": null
+    "cuppaSummaryPdf": "plot/tumor_sample.cuppa.vis.png",
+    "qSeePdf": null
   }
 }

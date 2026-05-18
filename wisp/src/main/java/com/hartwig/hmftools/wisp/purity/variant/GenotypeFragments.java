@@ -2,7 +2,9 @@ package com.hartwig.hmftools.wisp.purity.variant;
 
 import static java.lang.String.format;
 
+import static com.hartwig.hmftools.common.variant.CommonVcfTags.getGenotypeAttributeAsDouble;
 import static com.hartwig.hmftools.common.variant.SageVcfTags.LIST_SEPARATOR;
+import static com.hartwig.hmftools.common.variant.SageVcfTags.READ_STRAND_BIAS;
 
 import java.util.List;
 
@@ -23,9 +25,10 @@ public class GenotypeFragments
     public final UmiTypeCounts UmiCounts;
 
     private double mBqrErrorRate; // only used for output data
+    private double mDualBqrErrorRate; // only used for output data
 
     private final List<FilterReason> mFilterReasons;
-    private boolean mIsOutlier;
+    private final List<FilterReason> mDualFilterReasons;
 
     public GenotypeFragments(
             final String sampleName, final int alleleCount, final int depth, final double qualTotal, final UmiTypeCounts umiCounts,
@@ -39,7 +42,9 @@ public class GenotypeFragments
         GenotypeData = genotype;
 
         mBqrErrorRate = 0;
+        mDualBqrErrorRate = 0;
         mFilterReasons = Lists.newArrayList();
+        mDualFilterReasons = Lists.newArrayList();
     }
 
     public double qualPerAlleleFragment() { return AlleleCount > 0 ? QualTotal / (double)AlleleCount : 0; }
@@ -48,6 +53,9 @@ public class GenotypeFragments
 
     public void setBqrErrorRate(double errorRate) { mBqrErrorRate = errorRate; }
     public double bqrErrorRate() { return mBqrErrorRate; }
+
+    public void setDualBqrErrorRate(double errorRate) { mDualBqrErrorRate = errorRate; }
+    public double dualBqrErrorRate() { return mDualBqrErrorRate; }
 
     public void markOutlier()
     {
@@ -65,9 +73,24 @@ public class GenotypeFragments
         return aedCounts.length == 2 ? Double.parseDouble(aedCounts[1]) : -1;
     }
 
+    public double readStrandBias()
+    {
+        Object value = GenotypeData.getExtendedAttribute(SageVcfTags.READ_STRAND_BIAS, null);
+
+        if(value == null)
+            return -1;
+
+        String[] biasStrings = value.toString().split(LIST_SEPARATOR, 2);
+        return biasStrings.length == 2 ? Double.parseDouble(biasStrings[1]) : 0.5;
+    }
+
     public boolean isFiltered() { return !mFilterReasons.isEmpty(); }
     public void addFilterReason(final FilterReason filterReason) { mFilterReasons.add(filterReason); }
     public List<FilterReason> filterReasons() { return mFilterReasons; }
+
+    public boolean isDualFiltered() { return !mDualFilterReasons.isEmpty(); }
+    public void addDualFilterReason(final FilterReason filterReason) { mDualFilterReasons.add(filterReason); }
+    public List<FilterReason> dualFilterReasons() { return mDualFilterReasons; }
 
     public String toString()
     {

@@ -44,8 +44,8 @@ import com.hartwig.hmftools.cobalt.diploid.DiploidRegionLoader;
 import com.hartwig.hmftools.cobalt.diploid.DiploidStatus;
 import com.hartwig.hmftools.cobalt.exclusions.ExcludedRegionsFile;
 import com.hartwig.hmftools.cobalt.targeted.CobaltScope;
+import com.hartwig.hmftools.cobalt.targeted.TargetRegionEnrichment;
 import com.hartwig.hmftools.cobalt.targeted.TargetRegions;
-import com.hartwig.hmftools.cobalt.targeted.TargetedRegionsNormalisationFile;
 import com.hartwig.hmftools.cobalt.targeted.WholeGenome;
 import com.hartwig.hmftools.common.bam.BamUtils;
 import com.hartwig.hmftools.common.cobalt.CobaltGcMedianFile;
@@ -81,7 +81,6 @@ public class CobaltConfig
     public static final String GC_RATIO_MAX = "gc_ratio_max";
 
     private static final String SKIP_PCF_CALC = "skip_pcf_calc";
-    public static final String USE_OLD_SEGMENTER = "use_old_segmenter";
 
     public final String ReferenceId;
     public final String ReferenceBamPath;
@@ -102,7 +101,6 @@ public class CobaltConfig
     public final ValidationStringency BamStringency;
     public final boolean IncludeDuplicates;
     public final boolean SkipPcfCalc;
-    public final boolean UseOldSegmenter;
 
     public final String TumorOnlyDiploidBed;
     public final String TargetRegionNormFile;
@@ -141,7 +139,6 @@ public class CobaltConfig
         Threads = parseThreads(configBuilder);
 
         SkipPcfCalc = configBuilder.hasFlag(SKIP_PCF_CALC);
-        UseOldSegmenter = configBuilder.hasFlag(USE_OLD_SEGMENTER);
 
         SpecificChrRegions = SpecificRegions.from(configBuilder);
 
@@ -169,7 +166,6 @@ public class CobaltConfig
         configBuilder.addInteger(PCF_GAMMA, "Gamma value for copy number PCF", DEFAULT_PCF_GAMMA);
         configBuilder.addFlag(INCLUDE_DUPLICATES, "Include duplicate reads in depth counts");
         configBuilder.addFlag(SKIP_PCF_CALC, "Skip final PCF output");
-        configBuilder.addFlag(USE_OLD_SEGMENTER, "Use old R segmentation");
 
         addSpecificChromosomesRegionsConfig(configBuilder);
 
@@ -243,10 +239,12 @@ public class CobaltConfig
         }
         else
         {
-            TargetedRegionsNormalisationFile enrichmentFile = new TargetedRegionsNormalisationFile(TargetRegionNormFile);
-            final RefGenomeCoordinates refGenomeCoordinates = RefGenomeCoordinates.refGenomeCoordinates(RefGenVersion);
+            ListMultimap<Chromosome, TargetRegionEnrichment> chrEnrichmentMap = TargetRegionEnrichment.loadEnrichmentFile(TargetRegionNormFile);
+
+            RefGenomeCoordinates refGenomeCoordinates = RefGenomeCoordinates.refGenomeCoordinates(RefGenVersion);
             TargetRegions.ChromosomeData chromosomeData = chromosome -> refGenomeCoordinates.lengths().get(chromosome);
-            return new TargetRegions(enrichmentFile.load(), chromosomeData);
+
+            return new TargetRegions(chrEnrichmentMap, chromosomeData);
         }
     }
 

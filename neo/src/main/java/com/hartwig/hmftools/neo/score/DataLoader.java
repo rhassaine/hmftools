@@ -43,6 +43,8 @@ import com.hartwig.hmftools.common.neo.NeoEpitopeType;
 import com.hartwig.hmftools.common.neo.RnaNeoEpitope;
 import com.hartwig.hmftools.common.purple.PurityContext;
 import com.hartwig.hmftools.common.purple.PurityContextFile;
+import com.hartwig.hmftools.common.rna.TranscriptExpression;
+import com.hartwig.hmftools.common.rna.TranscriptExpressionFile;
 import com.hartwig.hmftools.common.variant.VcfFileReader;
 
 import htsjdk.variant.variantcontext.VariantContext;
@@ -228,4 +230,12 @@ public class DataLoader
             return null;
         }
     }
+
+    public static Map<String,Double> loadTranscriptExpression(final String sampleDir, final String sampleId) throws IOException
+    {
+        String filename = TranscriptExpressionFile.generateFilename(sampleDir, sampleId);
+        List<TranscriptExpression> transcriptExpressions = TranscriptExpressionFile.read(filename);
+        return transcriptExpressions.stream().collect(Collectors.toMap(TranscriptExpression::transcriptName, TranscriptExpression::tpm));
+    }
+
 }

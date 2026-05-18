@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.List;
 
 import com.google.common.collect.Lists;
+import com.hartwig.hmftools.amber.contamination.TumorContamination;
+import com.hartwig.hmftools.common.variant.CommonVcfTags;
 
 import org.jetbrains.annotations.NotNull;
 
@@ -23,7 +25,7 @@ import htsjdk.variant.vcf.VCFStandardHeaderLines;
 
 public class VCFWriter
 {
-    private static final String PASS = "PASS";
+    private static final String PASS = CommonVcfTags.PASS_FILTER;
 
     private final AmberConfig mConfig;
 

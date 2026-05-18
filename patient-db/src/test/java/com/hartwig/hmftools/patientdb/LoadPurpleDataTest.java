@@ -21,7 +21,6 @@ import com.hartwig.hmftools.common.purple.GeneCopyNumber;
 import com.hartwig.hmftools.common.purple.GermlineAmpDel;
 import com.hartwig.hmftools.common.purple.GermlineDetectionMethod;
 import com.hartwig.hmftools.common.purple.GermlineStatus;
-import com.hartwig.hmftools.common.purple.ImmutableFittedPurity;
 import com.hartwig.hmftools.common.purple.ImmutableFittedPurityScore;
 import com.hartwig.hmftools.common.purple.ImmutablePurityContext;
 import com.hartwig.hmftools.common.purple.ImmutablePurpleCopyNumber;
@@ -67,18 +66,10 @@ public class LoadPurpleDataTest extends DatabaseTestBase
                 .amberGender(Gender.FEMALE)
                 .germlineAberrations(Set.of(GermlineAberration.NONE))
                 .lohPercent(0)
-                .chimerismPercentage(0)
                 .tincLevel(0)
                 .build();
 
-        FittedPurity fittedPurity = ImmutableFittedPurity.builder()
-                .purity(0)
-                .normFactor(0)
-                .score(0)
-                .diploidProportion(0)
-                .ploidy(0)
-                .somaticPenalty(0)
-                .build();
+        FittedPurity fittedPurity = new FittedPurity(0, 0, 0, 0, 0, 0);
 
         FittedPurityScore score = ImmutableFittedPurityScore.builder()
                 .minPurity(0)
@@ -211,7 +202,7 @@ public class LoadPurpleDataTest extends DatabaseTestBase
     public void canWriteGermlineDeletions()
     {
         GermlineAmpDel germlineAmpDel = new GermlineAmpDel(
-                "GENE1",
+                "GENE1", "TRANS1",
                 "chr1",
                 "1q1.1",
                 1,
@@ -219,6 +210,7 @@ public class LoadPurpleDataTest extends DatabaseTestBase
                 1,
                 1,
                 1,
+                true,
                 GermlineDetectionMethod.SEGMENT,
                 GermlineStatus.UNKNOWN,
                 GermlineStatus.UNKNOWN,
@@ -289,7 +281,7 @@ public class LoadPurpleDataTest extends DatabaseTestBase
                 .insertSequenceAlignments("")
                 .insertSequenceRepeatClass("")
                 .insertSequenceRepeatType("")
-                .insertSequenceRepeatOrientation((byte) 0 )
+                .insertSequenceRepeatOrientation((byte) 0)
                 .insertSequenceRepeatCoverage(0)
                 .startAnchoringSupportDistance(0)
                 .endAnchoringSupportDistance(0)

@@ -8,8 +8,8 @@ import static com.hartwig.hmftools.common.fusion.FusionCommon.FS_DOWN;
 import static com.hartwig.hmftools.common.fusion.FusionCommon.FS_UP;
 import static com.hartwig.hmftools.common.fusion.FusionCommon.fsIndex;
 import static com.hartwig.hmftools.common.fusion.KnownFusionType.EXON_DEL_DUP;
-import static com.hartwig.hmftools.common.fusion.KnownFusionType.IG_KNOWN_PAIR;
-import static com.hartwig.hmftools.common.fusion.KnownFusionType.IG_PROMISCUOUS;
+import static com.hartwig.hmftools.common.fusion.KnownFusionType.ENHANCER_KNOWN_PAIR;
+import static com.hartwig.hmftools.common.fusion.KnownFusionType.ENHANCER_PROMISCUOUS;
 import static com.hartwig.hmftools.common.fusion.KnownFusionType.KNOWN_PAIR;
 import static com.hartwig.hmftools.common.fusion.KnownFusionType.PROMISCUOUS_3;
 import static com.hartwig.hmftools.common.fusion.KnownFusionType.PROMISCUOUS_5;
@@ -32,25 +32,36 @@ public class GeneFusion
     private int mId; // optional identifier
     private final BreakendTransData[] mTranscripts;
 
-    private boolean mIsReportable = false;
-    private final List<FusionReportableReason> mReportableReasons = Lists.newArrayList();
+    private boolean mIsReportable;
+    private final List<FusionReportableReason> mReportableReasons;
     private final boolean mPhaseMatched;
-    private final int[] mExonsSkipped = new int[] { 0, 0 };
-    private KnownFusionType mKnownFusionType = KnownFusionType.NONE;
-    private final boolean[] mIsPromiscuous = new boolean[] { false, false };
-    private boolean mKnownExons = false;
-    private boolean mHighImpactPromiscuous = false;
-    private boolean mProteinFeaturesSet = false;
+    private final int[] mExonsSkipped;
+    private KnownFusionType mKnownFusionType;
+    private final boolean[] mIsPromiscuous;
+    private boolean mKnownExons;
+    private boolean mHighImpactPromiscuous;
+    private boolean mProteinFeaturesSet;
 
-    private FusionAnnotations mAnnotations = null;
+    private FusionAnnotations mAnnotations;
 
     // calculated priority according to scheme for selecting fusions
-    private double mPriority = 0;
+    private double mPriority;
 
     public GeneFusion(final BreakendTransData upstreamTrans, final BreakendTransData downstreamTrans, boolean phaseMatched)
     {
         mTranscripts = new BreakendTransData[] { upstreamTrans, downstreamTrans };
         mPhaseMatched = phaseMatched;
+
+        mIsReportable = false;
+        mReportableReasons = Lists.newArrayList();
+        mExonsSkipped = new int[] { 0, 0 };
+        mKnownFusionType = KnownFusionType.NONE;
+        mIsPromiscuous = new boolean[] { false, false };
+        mKnownExons = false;
+        mHighImpactPromiscuous = false;
+        mProteinFeaturesSet = false;
+        mAnnotations = null;
+        mPriority = 0;
     }
 
     public void setId(final int id) { mId = id; }
@@ -58,7 +69,7 @@ public class GeneFusion
 
     public String name()
     {
-        if(isIG()) // form like @IGH-MYC
+        if(isEnhancer()) // form like @IGH-MYC
             return mTranscripts[FS_UP].transName() + "_" + mTranscripts[FS_DOWN].geneName();
         else
             return mTranscripts[FS_UP].geneName() + "_" + mTranscripts[FS_DOWN].geneName();
@@ -72,7 +83,7 @@ public class GeneFusion
 
     public String geneName(int fs)
     {
-        if(fs == FS_UP && isIG())
+        if(fs == FS_UP && isEnhancer())
             return mTranscripts[FS_UP].transName();
         else
             return mTranscripts[fs].geneName();
@@ -116,7 +127,7 @@ public class GeneFusion
 
     public KnownFusionType knownType() { return mKnownFusionType; }
     public boolean[] isPromiscuous() { return mIsPromiscuous; }
-    public boolean isIG() { return mKnownFusionType == IG_KNOWN_PAIR || mKnownFusionType == IG_PROMISCUOUS; }
+    public boolean isEnhancer() { return mKnownFusionType == ENHANCER_KNOWN_PAIR || mKnownFusionType == ENHANCER_PROMISCUOUS; }
 
     public void setKnownType(KnownFusionType type) { mKnownFusionType = type; }
 
@@ -135,7 +146,7 @@ public class GeneFusion
         if(!mIsReportable)
             return FusionLikelihoodType.NA;
 
-        if(mKnownFusionType == KNOWN_PAIR || mKnownFusionType == EXON_DEL_DUP || mKnownFusionType == IG_KNOWN_PAIR || mKnownExons)
+        if(mKnownFusionType == KNOWN_PAIR || mKnownFusionType == EXON_DEL_DUP || mKnownFusionType == ENHANCER_KNOWN_PAIR || mKnownExons)
             return FusionLikelihoodType.HIGH;
         else
             return FusionLikelihoodType.LOW;

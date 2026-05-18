@@ -9,7 +9,7 @@ import static com.hartwig.hmftools.common.variant.impact.VariantEffect.PHASED_IN
 import static com.hartwig.hmftools.common.variant.impact.VariantEffect.PHASED_INFRAME_INSERTION;
 import static com.hartwig.hmftools.common.variant.impact.VariantEffect.PHASED_MISSENSE;
 import static com.hartwig.hmftools.purple.PurpleConstants.BIALLELIC_ASSUMED_FRACTION;
-import static com.hartwig.hmftools.purple.PurpleConstants.MB_PER_GENOME;
+import static com.hartwig.hmftools.common.genome.refgenome.RefGenomeConstants.MB_PER_GENOME;
 import static com.hartwig.hmftools.purple.PurpleUtils.PPL_LOGGER;
 import static com.hartwig.hmftools.purple.drivers.SomaticVariantDrivers.addReportableTranscriptList;
 import static com.hartwig.hmftools.purple.somatic.SomaticVariantEnrichment.populateHeader;
@@ -26,6 +26,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.hartwig.hmftools.common.driver.DriverCatalog;
+import com.hartwig.hmftools.common.redux.MsiModelPrediction;
 import com.hartwig.hmftools.purple.DriverGeneResource;
 import com.hartwig.hmftools.common.genome.chromosome.HumanChromosome;
 import com.hartwig.hmftools.common.perf.TaskExecutor;
@@ -80,7 +81,8 @@ public class SomaticStream
     private static final int CHART_DOWNSAMPLE_FACTOR = 25000; // eg for 50K variants, only every second will be kept for plotting
 
     public SomaticStream(
-            final PurpleConfig config, final ReferenceData referenceData, final SomaticVariantCache somaticVariantCache)
+            final PurpleConfig config, final ReferenceData referenceData, final SomaticVariantCache somaticVariantCache,
+            final MsiModelPrediction msiPrediction)
     {
         mReferenceData = referenceData;
         mConfig = config;
@@ -92,7 +94,7 @@ public class SomaticStream
         mEnabled = somaticVariantCache.hasData();
         mTumorMutationalLoad = new TumorMutationalLoad(mReferenceData.TargetRegions, config.tumorOnlyMode());
         mSomaticGermlineLikelihood = new SomaticGermlineLikelihood(mConfig, somaticVariantCache.genotypeIds());
-        mMicrosatelliteIndels = new MicrosatelliteIndels(mReferenceData.TargetRegions);
+        mMicrosatelliteIndels = new MicrosatelliteIndels(mReferenceData.TargetRegions, msiPrediction);
         mDrivers = new SomaticVariantDrivers(mGenePanel);
         mRChartData = new RChartData(config, config.TumorId);
 
@@ -128,7 +130,7 @@ public class SomaticStream
     }
 
     public List<DriverCatalog> buildDrivers(
-            final Map<String,GeneCopyNumber> geneCopyNumberMap, final List<DriverSourceData> driverSourceData)
+            final Map<String,List<GeneCopyNumber>> geneCopyNumberMap, final List<DriverSourceData> driverSourceData)
     {
         if(mReferenceData.TargetRegions.hasTargetRegions())
         {
@@ -256,8 +258,11 @@ public class SomaticStream
 
             calculateVariantLoadValues();
 
-            PPL_LOGGER.debug("charting variants: total(snvs={} indels={}) downsampled({} snvMod={} indelMod={})",
-                    mSnpCount, mIndelCount, mPlottingVariants.size(), mSnpMod, mIndelMod);
+            if(mSnpMod > 1 || mIndelMod < 1)
+            {
+                PPL_LOGGER.debug("charting variants: total(snvs={} indels={}) downsampled({}) mods(snv={} indel={})",
+                        mSnpCount, mIndelCount, mPlottingVariants.size(), mSnpMod, mIndelMod);
+            }
         }
         catch(IOException e)
         {
@@ -279,9 +284,8 @@ public class SomaticStream
             mTmb = mTumorMutationalLoad.burden() / MB_PER_GENOME;
         }
 
-        PPL_LOGGER.info(String.format("load(%.1f tml=%.4f) msiIndels(%d perMb=%.4f) burden(%.1f perMb=%.4f)",
-                mTumorMutationalLoad.load(), mTml, mMicrosatelliteIndels.msiIndelCount(), mMsiIndelPerMb,
-                mTumorMutationalLoad.burden(), mTmb));
+        PPL_LOGGER.info(String.format("load(tml=%.4f) msiIndels(%d perMb=%.4f) burden(%.1f perMb=%.4f)",
+                mTml, mMicrosatelliteIndels.msiIndelCount(), mMsiIndelPerMb, mTumorMutationalLoad.burden(), mTmb));
     }
 
     private void checkReportability(final SomaticVariant variant)
@@ -375,7 +379,9 @@ public class SomaticStream
         if(!HumanChromosome.contains(variant.chromosome()))
             return;
 
-        if(mReferenceData.TargetRegions.hasTargetRegions())
+        boolean reported = variant.decorator().reported();
+
+        if(!reported && mReferenceData.TargetRegions.hasTargetRegions())
         {
             if(!mReferenceData.TargetRegions.inTargetRegions(variant.chromosome(), variant.position()))
                 return;
@@ -385,14 +391,14 @@ public class SomaticStream
         {
             mIndelCount++;
 
-            if(mIndelCount % mIndelMod == 0)
+            if(reported || (mIndelCount % mIndelMod == 0))
                 mPlottingVariants.add(variant.decorator());
         }
         else
         {
             mSnpCount++;
 
-            if(mSnpCount % mSnpMod == 0)
+            if(reported || (mSnpCount % mSnpMod == 0))
                 mPlottingVariants.add(variant.decorator());
         }
     }

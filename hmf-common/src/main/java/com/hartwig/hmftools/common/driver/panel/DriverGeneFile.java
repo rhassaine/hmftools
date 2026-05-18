@@ -10,6 +10,7 @@ import static com.hartwig.hmftools.common.utils.file.FileReaderUtils.createField
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +34,12 @@ public final class DriverGeneFile
 
     public static List<DriverGene> read(final String filename) throws IOException
     {
-        return fromLines(Files.readAllLines(new File(filename).toPath()));
+        return read(new File(filename).toPath());
+    }
+
+    public static List<DriverGene> read(final Path path) throws IOException
+    {
+        return fromLines(Files.readAllLines(path));
     }
 
     private enum Columns
@@ -57,7 +63,10 @@ public final class DriverGeneFile
         reportGermlineDeletion,
         reportGermlineAmplification,
         additionalReportedTranscripts,
-        reportPGX;
+        reportPGX,
+        reportHighExpression,
+        reportLowExpression,
+        reportNovelSpliceJunction;
     }
 
     public static List<DriverGene> fromLines(final List<String> lines)
@@ -90,6 +99,10 @@ public final class DriverGeneFile
         Integer germlineAmpIndex = fieldsIndexMap.get(Columns.reportGermlineAmplification.toString());
         int altTransIndex = fieldsIndexMap.get(Columns.additionalReportedTranscripts.toString());
         int reportPGXIndex = fieldsIndexMap.get(Columns.reportPGX.toString());
+
+        Integer rnaExpLowIndex = fieldsIndexMap.get(Columns.reportLowExpression.toString());
+        Integer rnaExpHighIndex = fieldsIndexMap.get(Columns.reportHighExpression.toString());
+        Integer rnaNovelSjIndex = fieldsIndexMap.get(Columns.reportNovelSpliceJunction.toString());
 
         ImmutableDriverGene.Builder builder = ImmutableDriverGene.builder();
 
@@ -135,7 +148,10 @@ public final class DriverGeneFile
                     .reportGermlineDeletion(reportGermlineDeletion)
                     .reportGermlineAmplification(germlineAmpIndex != null ? Boolean.parseBoolean(values[germlineAmpIndex]) : false)
                     .additionalReportedTranscripts(otherReportableTrans)
-                    .reportPGX(Boolean.parseBoolean(values[reportPGXIndex]));
+                    .reportPGX(Boolean.parseBoolean(values[reportPGXIndex]))
+                    .reportLowExpression(rnaExpLowIndex != null ? Boolean.parseBoolean(values[rnaExpLowIndex]) : false)
+                    .reportHighExpression(rnaExpHighIndex != null ? Boolean.parseBoolean(values[rnaExpHighIndex]) : false)
+                    .reportNovelSpliceJunction(rnaNovelSjIndex != null ? Boolean.parseBoolean(values[rnaNovelSjIndex]) : false);
 
             driverGenes.add(builder.build());
         }
@@ -188,6 +204,9 @@ public final class DriverGeneFile
                 .add(String.valueOf(gene.reportGermlineAmplification()))
                 .add(otherReportableTransStr(gene.additionalReportedTranscripts()))
                 .add(String.valueOf(gene.reportPGX()))
+                .add(String.valueOf(gene.reportLowExpression()))
+                .add(String.valueOf(gene.reportHighExpression()))
+                .add(String.valueOf(gene.reportNovelSpliceJunction()))
                 .toString();
     }
 

@@ -46,12 +46,6 @@ public abstract class ComparableImage implements ComparableItem
     public String getBasename(){ return new File(Path).getName(); }
 
     @Override
-    public boolean reportable() { return true; }
-
-    @Override
-    public boolean isPass() { return true; }
-
-    @Override
     public boolean matches(final ComparableItem other)
     {
         final ComparableImage otherImageData = (ComparableImage) other;
@@ -76,7 +70,7 @@ public abstract class ComparableImage implements ComparableItem
             return new Mismatch(this, other, MismatchType.INVALID_BOTH, List.of());
 
         if(Image == null)
-            return new Mismatch(this, other, MismatchType.INVALID_REF, List.of());
+            return new Mismatch(this, other, MismatchType.INVALID_OLD, List.of());
 
         if(otherImage == null)
             return new Mismatch(this, other, MismatchType.INVALID_NEW, List.of());
@@ -126,7 +120,7 @@ public abstract class ComparableImage implements ComparableItem
 
             if(image == null)
             {
-                CMP_LOGGER.error("failed to load image with unsupported format: {}", path);
+                CMP_LOGGER.warn("failed to load image with unsupported format: {}", path);
                 return null;
             }
 
@@ -134,7 +128,7 @@ public abstract class ComparableImage implements ComparableItem
         }
         catch(IOException e)
         {
-            CMP_LOGGER.error("failed to load image: {}", path, e);
+            CMP_LOGGER.warn("failed to load image: {}", path, e);
             return null;
         }
     }

@@ -1,5 +1,6 @@
 package com.hartwig.hmftools.common.pipeline;
 
+import static com.hartwig.hmftools.common.pipeline.PipelineOutputStructure.OA_V3_0;
 import static com.hartwig.hmftools.common.utils.config.ConfigUtils.convertWildcardSamplePath;
 
 import java.io.IOException;
@@ -35,13 +36,16 @@ public record PipelineToolDirectories(
         String tumorMetricsDir,
         String vChordDir,
         String virusBreakendDir,
-        String virusInterpreterDir
-) {
+        String virusInterpreterDir,
+        String qseeDir)
+{
+    public static final PipelineOutputStructure DEFAULT_PIPELINE_OUTPUT = OA_V3_0;
+
     public static final String PIPELINE_FORMAT_CFG = "pipeline_format";
     public static final String PIPELINE_FORMAT_DESC =
             "Assumed directory structure for tool directories. Possible values: " + Arrays.stream(PipelineOutputStructure.values())
                     .map(Enum::name)
-                    .collect(Collectors.joining(", ")) + ". Default: " + PipelineOutputStructure.PIP5_V6_0.name();
+                    .collect(Collectors.joining(", ")) + ". Default: " + DEFAULT_PIPELINE_OUTPUT.name();
     public static final String PIPELINE_FORMAT_FILE_CFG = "pipeline_format_file";
     public static final String PIPELINE_FORMAT_FILE_DESC = "File describing expected tool directory structure.";
 
@@ -72,7 +76,8 @@ public record PipelineToolDirectories(
             "bamtools/*_bamtools",
             "vchord",  // not yet implemented in this version
             "virusbreakend",
-            "virusinterpreter"
+            "virusinterpreter",
+            ""
     );
 
     public static final PipelineToolDirectories OA_V2_2_FORMAT = new PipelineToolDirectories(
@@ -102,10 +107,40 @@ public record PipelineToolDirectories(
             "bamtools/*_bamtools",
             "vchord",  // not yet implemented in this version
             "virusbreakend",
-            "virusinterpreter"
-    );
+            "virusinterpreter",
+            "qsee");
 
     public static final PipelineToolDirectories OA_V2_3_FORMAT = OA_V2_2_FORMAT;
+
+    public static final PipelineToolDirectories OA_V3_0_FORMAT = new PipelineToolDirectories(
+            "amber",
+            "chord",
+            "cider",
+            "cobalt",
+            "cuppa",
+            "esvee",
+            "bamtools/$",
+            "bamtools/$",
+            "isofox",
+            "lilac",
+            "linx/germline_annotations",
+            "linx/somatic_annotations",
+            "orange",
+            "pave/germline",
+            "pave/somatic",
+            "peach",
+            "purple",
+            "sage/germline",
+            "sage/somatic",
+            "sigs",
+            "",
+            "teal",
+            "bamtools/*",
+            "bamtools/*",
+            "vchord",  // not yet implemented in this version
+            "virusbreakend",
+            "virusinterpreter",
+            "qsee");
 
     public static final PipelineToolDirectories PIP5_V6_0_FORMAT = new PipelineToolDirectories(
             "amber",
@@ -134,8 +169,8 @@ public record PipelineToolDirectories(
             "*/bam_metrics",
             "vchord",
             "virusbreakend",
-            "virusintrprtr"
-    );
+            "virusintrprtr",
+            "qsee");
 
     public static final PipelineToolDirectories DB_V6_0_FORMAT = new PipelineToolDirectories(
             "amber",
@@ -164,8 +199,8 @@ public record PipelineToolDirectories(
             "bamtools/*_bamtools",
             "vchord",  // not yet implemented in this version
             "virusbreakend",
-            "virusinterpreter"
-    );
+            "virusinterpreter",
+            "qsee");
 
     public static PipelineToolDirectories resolveToolDirectories(
             final ConfigBuilder configBuilder, final String pipelineFormatConfigStr,
@@ -198,7 +233,7 @@ public record PipelineToolDirectories(
         }
         else
         {
-            return PipelineToolDirectories.resolveToolDirectoriesFromDefault(PipelineOutputStructure.OA_V2_2);
+            return PipelineToolDirectories.resolveToolDirectoriesFromDefault(DEFAULT_PIPELINE_OUTPUT);
         }
     }
 
@@ -215,6 +250,7 @@ public record PipelineToolDirectories(
             case OA_V2_0 -> OA_V2_0_FORMAT;
             case OA_V2_2 -> OA_V2_2_FORMAT;
             case OA_V2_3 -> OA_V2_3_FORMAT;
+            case OA_V3_0 -> OA_V3_0_FORMAT;
             case PIP5_V6_0 -> PIP5_V6_0_FORMAT;
             case DB_V6_0 -> DB_V6_0_FORMAT;
         };
@@ -261,7 +297,8 @@ public record PipelineToolDirectories(
                 convertWildcardSamplePath(tumorMetricsDir, tumorSampleId, normalSampleId),
                 convertWildcardSamplePath(vChordDir, tumorSampleId, normalSampleId),
                 convertWildcardSamplePath(virusBreakendDir, tumorSampleId, normalSampleId),
-                convertWildcardSamplePath(virusInterpreterDir, tumorSampleId, normalSampleId)
+                convertWildcardSamplePath(virusInterpreterDir, tumorSampleId, normalSampleId),
+                convertWildcardSamplePath(qseeDir, tumorSampleId, normalSampleId)
         );
     }
 }

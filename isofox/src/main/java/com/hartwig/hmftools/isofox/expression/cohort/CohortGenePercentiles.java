@@ -1,25 +1,30 @@
 package com.hartwig.hmftools.isofox.expression.cohort;
 
+import static com.hartwig.hmftools.common.utils.file.CommonFields.FLD_CANCER_TYPE;
 import static com.hartwig.hmftools.common.utils.file.CommonFields.FLD_GENE_ID;
 import static com.hartwig.hmftools.common.stats.Percentiles.PERCENTILE_COUNT;
 import static com.hartwig.hmftools.common.stats.Percentiles.getPercentile;
+import static com.hartwig.hmftools.common.utils.file.FileDelimiters.inferFileDelimiter;
 import static com.hartwig.hmftools.common.utils.file.FileReaderUtils.createFieldsIndexMap;
 import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.createBufferedReader;
 import static com.hartwig.hmftools.isofox.IsofoxConfig.ISF_LOGGER;
-import static com.hartwig.hmftools.isofox.results.ResultsWriter.DELIMITER;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Map;
+import java.util.Set;
 
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 
 public class CohortGenePercentiles
 {
     private final Map<String,Map<String,double[]>> mGenePercentiles; // by geneId and then cancer type
     private final Map<String,Map<String,Double>> mGeneMedians;
+    private final Map<String,Double> mGeneMaxMedians; // max median value across all cancer types
+    private final Set<String> mCancerTypes;
 
     public static final String PAN_CANCER = "ALL";
     public static final String CANCER_TYPE_OTHER = "Other";
@@ -29,6 +34,8 @@ public class CohortGenePercentiles
     {
         mGenePercentiles = Maps.newHashMap();
         mGeneMedians = Maps.newHashMap();
+        mGeneMaxMedians = Maps.newHashMap();
+        mCancerTypes = Sets.newHashSet();
 
         loadCohortFile(cohortFile);
     }
@@ -46,11 +53,12 @@ public class CohortGenePercentiles
             BufferedReader fileReader = createBufferedReader(filename);
 
             String header = fileReader.readLine();
+            String fileDelim = inferFileDelimiter(filename);
 
-            final Map<String,Integer> fieldsIndexMap = createFieldsIndexMap(header, DELIMITER);
+            Map<String,Integer> fieldsIndexMap = createFieldsIndexMap(header, fileDelim);
 
             int geneIdIndex = fieldsIndexMap.get(FLD_GENE_ID);
-            int cancerIndex = fieldsIndexMap.get("CancerType");
+            int cancerIndex = fieldsIndexMap.get(FLD_CANCER_TYPE);
             int medianIndex = fieldsIndexMap.get("Median");
             int percStartIndex = fieldsIndexMap.get("Pct_0");
 
@@ -61,11 +69,13 @@ public class CohortGenePercentiles
             String line = null;
             while((line = fileReader.readLine()) != null)
             {
-                final String[] items = line.split(DELIMITER, -1);
+                String[] values = line.split(fileDelim, -1);
 
-                final String geneId = items[geneIdIndex];
-                final String cancerType = items[cancerIndex];
-                final double median = Double.parseDouble(items[medianIndex]);
+                String geneId = values[geneIdIndex];
+                String cancerType = values[cancerIndex];
+                mCancerTypes.add(cancerType);
+
+                double median = Double.parseDouble(values[medianIndex]);
 
                 if(!currentGeneId.equals(geneId))
                 {
@@ -80,9 +90,9 @@ public class CohortGenePercentiles
 
                 double[] percentileData = new double[PERCENTILE_COUNT];
 
-                for(int i = percStartIndex; i < items.length; ++i)
+                for(int i = percStartIndex; i < values.length; ++i)
                 {
-                    double tpm = Double.parseDouble(items[i]);
+                    double tpm = Double.parseDouble(values[i]);
                     percentileData[i - percStartIndex] = tpm;
                 }
 
@@ -90,6 +100,12 @@ public class CohortGenePercentiles
             }
 
             ISF_LOGGER.info("loaded distribution for {} genes from file({})", mGeneMedians.size(), filename);
+
+            for(Map.Entry<String,Map<String,Double>> entry : mGeneMedians.entrySet())
+            {
+                double maxMedian = entry.getValue().values().stream().mapToDouble(x -> x.doubleValue()).max().orElse(0);
+                mGeneMaxMedians.put(entry.getKey(), maxMedian);
+            }
         }
         catch (IOException e)
         {
@@ -97,9 +113,17 @@ public class CohortGenePercentiles
         }
     }
 
+    public boolean hasCancerType(final String cancerType) { return mCancerTypes.contains(cancerType); }
+
+    public double getTpmMedianAcrossCancerTypes(final String geneId)
+    {
+        Double maxMedian = mGeneMaxMedians.get(geneId);
+        return maxMedian != null ? maxMedian : 0;
+    }
+
     public double getTpmMedian(final String geneId, final String cancerType)
     {
-        final Map<String,Double> medianMap = mGeneMedians.get(geneId);
+        Map<String,Double> medianMap = mGeneMedians.get(geneId);
 
         if(medianMap == null || !medianMap.containsKey(cancerType))
             return INVALID_VALUE;

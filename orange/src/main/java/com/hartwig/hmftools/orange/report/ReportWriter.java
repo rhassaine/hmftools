@@ -7,14 +7,16 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.hartwig.hmftools.common.utils.file.FileWriterUtils;
 import com.hartwig.hmftools.datamodel.OrangeJson;
 import com.hartwig.hmftools.datamodel.isofox.IsofoxRecord;
+import com.hartwig.hmftools.datamodel.orange.ExperimentType;
 import com.hartwig.hmftools.datamodel.orange.OrangeRecord;
-import com.hartwig.hmftools.orange.report.chapters.CohortComparisonChapter;
+import com.hartwig.hmftools.orange.OrangeConfig;
+import com.hartwig.hmftools.orange.report.chapters.CuppaChapter;
 import com.hartwig.hmftools.orange.report.chapters.FrontPageChapter;
 import com.hartwig.hmftools.orange.report.chapters.GermlineFindingsChapter;
 import com.hartwig.hmftools.orange.report.chapters.ImmunologyChapter;
+import com.hartwig.hmftools.orange.report.chapters.PurplePlotsChapter;
 import com.hartwig.hmftools.orange.report.chapters.QualityControlChapter;
 import com.hartwig.hmftools.orange.report.chapters.ReportChapter;
 import com.hartwig.hmftools.orange.report.chapters.RnaFindingsChapter;
@@ -29,40 +31,42 @@ import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.AreaBreak;
 import com.itextpdf.layout.property.AreaBreakType;
 
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public class ReportWriter
 {
-    private final boolean writeToDisk;
-    @Nullable
-    private final String outputDir;
-    @NotNull
-    private final PlotPathResolver plotPathResolver;
-    private final boolean addDisclaimer;
+    private final boolean mWriteToDisk;
 
-    ReportWriter(boolean writeToDisk, @Nullable String outputDir, @NotNull PlotPathResolver plotPathResolver, boolean addDisclaimer)
+    @Nullable
+    private final OrangeConfig mConfig;
+    private final String mOutputDir;
+    private final String mOutputId;
+
+    private final PlotPathResolver mPlotPathResolver;
+
+    public ReportWriter(boolean writeToDisk, @Nullable final OrangeConfig config, final PlotPathResolver plotPathResolver)
     {
-        this.writeToDisk = writeToDisk;
-        this.outputDir = outputDir;
-        this.plotPathResolver = plotPathResolver;
-        this.addDisclaimer = addDisclaimer;
+        mWriteToDisk = writeToDisk;
+        mConfig = config;
+        mOutputDir = config != null ? config.OutputDir : null;
+        mOutputId = config != null ? config.OutputId : null;
+        mPlotPathResolver = plotPathResolver;
     }
 
-    public void write(@NotNull OrangeRecord report) throws IOException
+    public void write(final OrangeRecord report) throws IOException
     {
         writePdf(report);
         writeJson(report);
     }
 
-    private void writePdf(@NotNull OrangeRecord report) throws IOException
+    private void writePdf(final OrangeRecord report) throws IOException
     {
         ReportResources reportResources = ReportResources.create();
 
         List<ReportChapter> chapters = new ArrayList<>();
 
-        chapters.add(new FrontPageChapter(report, plotPathResolver, reportResources));
-        chapters.add(new SomaticFindingsChapter(report, plotPathResolver, reportResources));
+        chapters.add(new FrontPageChapter(mConfig, report, mPlotPathResolver, reportResources));
+        chapters.add(new SomaticFindingsChapter(mConfig, report, mPlotPathResolver, reportResources));
 
         if(!report.tumorOnlyMode())
         {
@@ -79,38 +83,54 @@ public class ReportWriter
 
         if(!report.tumorOnlyMode())
         {
-            chapters.add(new CohortComparisonChapter(report, plotPathResolver, reportResources));
+            chapters.add(new CuppaChapter(report, mPlotPathResolver, reportResources));
         }
 
-        chapters.add(new QualityControlChapter(report, plotPathResolver, reportResources));
+        if(report.plots().qSeePlot() != null)
+        {
+            chapters.add(new QualityControlChapter(report, mPlotPathResolver, reportResources));
+        }
 
-        String pipelineVersion = report.pipelineVersion() != null ? report.pipelineVersion() : ReportResources.NOT_AVAILABLE;
-        writePdfChapters(report.sampleId(), pipelineVersion, chapters, reportResources);
+        chapters.add(new PurplePlotsChapter(report, mPlotPathResolver, reportResources));
+
+        writePdfChapters(report.sampleId(), chapters, reportResources);
     }
 
-    private void writeJson(@NotNull OrangeRecord report) throws IOException
+    private String formOutputFile(final String sampleId, final String fileId)
     {
-        if(writeToDisk && outputDir != null)
-        {
-            String basePath = FileWriterUtils.checkAddDirSeparator(outputDir);
-            String outputFilePath = basePath + report.sampleId() + ".orange.json";
-            LOGGER.info("Writing JSON report to {} ", outputFilePath);
+        String filename = mOutputDir + sampleId + ".orange.";
 
-            OrangeJson.getInstance().write(report, outputFilePath);
+        if(mOutputId != null)
+            filename += mOutputId + ".";
+
+        return filename + fileId;
+    }
+
+    private void writeJson(final OrangeRecord report) throws IOException
+    {
+        if(mWriteToDisk && mOutputDir != null)
+        {
+            String outputFilename = formOutputFile(report.sampleId(), "json");
+            LOGGER.info("writing JSON report to {} ", outputFilename);
+
+            OrangeJson.getInstance().write(report, outputFilename);
         }
         else
         {
-            LOGGER.info("Generating in-memory JSON report");
+            LOGGER.info("generating in-memory JSON report");
         }
     }
 
-    private void writePdfChapters(@NotNull String sampleId, @NotNull String pipelineVersion, @NotNull List<ReportChapter> chapters,
-            @NotNull ReportResources reportResources) throws IOException
+    private void writePdfChapters(
+            final String sampleId, final List<ReportChapter> chapters, final ReportResources reportResources) throws IOException
     {
         Document doc = initializeReport(sampleId);
         PdfDocument pdfDocument = doc.getPdfDocument();
 
-        PageEventHandler pageEventHandler = PageEventHandler.create(sampleId, pipelineVersion, reportResources, addDisclaimer);
+        PageEventHandler pageEventHandler = PageEventHandler.create(
+                mConfig != null ? mConfig.DisplaySampleId : sampleId, reportResources,
+                mConfig != null ? mConfig.AddDisclaimer : false);
+
         pdfDocument.addEventHandler(PdfDocumentEvent.START_PAGE, pageEventHandler);
 
         for(int i = 0; i < chapters.size(); i++)
@@ -133,24 +153,22 @@ public class ReportWriter
         pdfDocument.close();
     }
 
-    @NotNull
-    private Document initializeReport(@NotNull String sampleId) throws IOException
+    private Document initializeReport(final String sampleId) throws IOException
     {
         PdfWriter writer;
         WriterProperties properties = new WriterProperties()
                 .setFullCompressionMode(true)
                 .setCompressionLevel(CompressionConstants.BEST_COMPRESSION)
                 .useSmartMode();
-        if(writeToDisk)
+        if(mWriteToDisk)
         {
-            String basePath = FileWriterUtils.checkAddDirSeparator(outputDir);
-            String outputFilePath = basePath + sampleId + ".orange.pdf";
-            LOGGER.info("Writing PDF report to {}", outputFilePath);
-            writer = new PdfWriter(outputFilePath, properties);
+            String outputFilename = formOutputFile(sampleId, "pdf");
+            LOGGER.info("writing PDF report to {}", outputFilename);
+            writer = new PdfWriter(outputFilename, properties);
         }
         else
         {
-            LOGGER.info("Generating in-memory PDF report");
+            LOGGER.info("generating in-memory PDF report");
             writer = new PdfWriter(new ByteArrayOutputStream(), properties);
         }
 

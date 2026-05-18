@@ -1,42 +1,39 @@
 package com.hartwig.hmftools.orange.report.chapters;
 
+import static com.hartwig.hmftools.common.hla.HlaCommon.MHC_CLASS_I;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+import com.hartwig.hmftools.datamodel.hla.LilacAllele;
 import com.hartwig.hmftools.datamodel.hla.LilacRecord;
+import com.hartwig.hmftools.datamodel.orange.ExperimentType;
 import com.hartwig.hmftools.datamodel.orange.OrangeRecord;
 import com.hartwig.hmftools.orange.report.ReportResources;
-import com.hartwig.hmftools.datamodel.purple.PurpleQCInterpretation;
+import com.hartwig.hmftools.orange.algo.QcStatusInterpretation;
 import com.hartwig.hmftools.orange.report.tables.HLAAlleleTable;
 import com.hartwig.hmftools.orange.report.tables.ImmuneEscapeTable;
-import com.hartwig.hmftools.orange.report.util.Cells;
-import com.hartwig.hmftools.orange.report.util.Tables;
 import com.itextpdf.kernel.geom.PageSize;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.element.Paragraph;
-import com.itextpdf.layout.element.Table;
-import com.itextpdf.layout.property.UnitValue;
-
-import org.jetbrains.annotations.NotNull;
 
 public class ImmunologyChapter implements ReportChapter
 {
-    @NotNull
-    private final OrangeRecord report;
-    @NotNull
-    private final ReportResources reportResources;
+    private final OrangeRecord mReport;
+    private final ReportResources mReportResources;
 
-    public ImmunologyChapter(@NotNull final OrangeRecord report, @NotNull final ReportResources reportResources)
+    public ImmunologyChapter(final OrangeRecord report, final ReportResources reportResources)
     {
-        this.report = report;
-        this.reportResources = reportResources;
+        mReport = report;
+        mReportResources = reportResources;
     }
 
-    @NotNull
     @Override
     public String name()
     {
         return "Immunology";
     }
 
-    @NotNull
     @Override
     public PageSize pageSize()
     {
@@ -44,37 +41,52 @@ public class ImmunologyChapter implements ReportChapter
     }
 
     @Override
-    public void render(@NotNull final Document document)
+    public void render(final Document document)
     {
-        document.add(new Paragraph(name()).addStyle(reportResources.chapterTitleStyle()));
+        document.add(new Paragraph(name()).addStyle(mReportResources.chapterTitleStyle()));
+
+        if(QcStatusInterpretation.hasPurpleFail(mReport.purple().fit().qc()))
+        {
+            mReportResources.addQcFailNotice(document);
+            return;
+        }
 
         addHLAData(document);
-        addImmuneEscapeData(document);
+
+        if(mReport.experimentType() == ExperimentType.WHOLE_GENOME)
+        {
+            addImmuneEscapeData(document);
+        }
     }
 
-    private void addHLAData(@NotNull Document document)
+    private void addHLAData(final Document document)
     {
-        LilacRecord lilacData = report.lilac();
+        LilacRecord lilacData = mReport.lilac();
 
         if(lilacData == null)
             return;
 
-        Cells cells = new Cells(reportResources);
-        Table qc = new Table(UnitValue.createPercentArray(new float[] { 1, 1 }));
-        qc.addCell(cells.createKey("QC Status:"));
-        qc.addCell(cells.createValue(lilacData.qc()));
+        // Cells cells = new Cells(mReportResources);
+        // Table qc = new Table(UnitValue.createPercentArray(new float[] { 1, 1 }));
 
-        document.add(new Tables(reportResources).createWrapping(qc, "HLA QC"));
+        String title = "HLA Class I Alleles";
 
-        String title = "HLA Alleles (" + lilacData.alleles().size() + ")";
-        boolean isTumorFail = PurpleQCInterpretation.isFail(report.purple().fit().qc());
-        document.add(HLAAlleleTable.build(title, contentWidth(), lilacData.alleles(), reportResources, isTumorFail));
+        List<LilacAllele> classIAlleles = lilacData.alleles().stream().filter(x -> x.geneClass().equals(MHC_CLASS_I)).collect(Collectors.toList());
+        document.add(HLAAlleleTable.build(title, contentWidth(), classIAlleles, mReportResources, mReport.hasRna()));
+
+        if(mReport.experimentType() == ExperimentType.WHOLE_GENOME)
+        {
+            title = "HLA Class II Alleles";
+            List<LilacAllele> classIIAlleles =
+                    lilacData.alleles().stream().filter(x -> !x.geneClass().equals(MHC_CLASS_I)).collect(Collectors.toList());
+            document.add(HLAAlleleTable.build(title, contentWidth(), classIIAlleles, mReportResources, mReport.hasRna()));
+        }
     }
 
-    private void addImmuneEscapeData(@NotNull Document document)
+    private void addImmuneEscapeData(final Document document)
     {
         String title = "Genetic Immune Escape";
-        boolean isTumorFail = PurpleQCInterpretation.isFail(report.purple().fit().qc());
-        document.add(ImmuneEscapeTable.build(title, contentWidth(), report.immuneEscape(), reportResources, isTumorFail));
+        boolean isTumorFail = QcStatusInterpretation.hasPurpleFail(mReport.purple().fit().qc());
+        document.add(ImmuneEscapeTable.build(title, contentWidth(), mReport.immuneEscape(), mReportResources, isTumorFail));
     }
 }

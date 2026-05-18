@@ -1,14 +1,20 @@
 package com.hartwig.hmftools.isofox.expression;
 
 import static java.lang.Math.abs;
+import static java.lang.Math.log;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
+import static java.lang.String.format;
 
+import static com.hartwig.hmftools.common.rna.GeneExpression.NO_CANCER_AVAILABLE_VALUE;
 import static com.hartwig.hmftools.common.sigs.SigUtils.calcResiduals;
 import static com.hartwig.hmftools.common.sigs.SigUtils.calculateFittedCounts;
 import static com.hartwig.hmftools.common.utils.VectorUtils.sumVector;
 import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.createBufferedWriter;
 import static com.hartwig.hmftools.isofox.IsofoxConfig.ISF_LOGGER;
+import static com.hartwig.hmftools.isofox.IsofoxConstants.HIGH_EXPRESSION_FOLD_CHANGE_HIGH;
+import static com.hartwig.hmftools.isofox.IsofoxConstants.HIGH_EXPRESSION_FOLD_CHANGE_LOW;
+import static com.hartwig.hmftools.isofox.IsofoxConstants.HIGH_EXPRESSION_PERCENTILE_HIGH;
 import static com.hartwig.hmftools.isofox.IsofoxConstants.MAX_GENE_PERC_CONTRIBUTION;
 import static com.hartwig.hmftools.isofox.expression.CategoryCountsData.hasGeneIdentifier;
 import static com.hartwig.hmftools.isofox.expression.ExpectedRatesCommon.formTranscriptDefinitions;
@@ -21,11 +27,13 @@ import java.util.StringJoiner;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.hartwig.hmftools.common.driver.panel.DriverGene;
 import com.hartwig.hmftools.common.sigs.ExpectationMaxFit;
 import com.hartwig.hmftools.common.sigs.SigResiduals;
 import com.hartwig.hmftools.isofox.IsofoxConfig;
 import com.hartwig.hmftools.isofox.adjusts.FragmentSize;
 import com.hartwig.hmftools.isofox.adjusts.GcRatioCounts;
+import com.hartwig.hmftools.isofox.expression.cohort.CohortGenePercentiles;
 import com.hartwig.hmftools.isofox.results.GeneResult;
 import com.hartwig.hmftools.isofox.results.ResultsWriter;
 import com.hartwig.hmftools.isofox.results.TranscriptResult;
@@ -103,41 +111,42 @@ public class TranscriptExpression
         if(!checkCached && mConfig.applyGcBiasAdjust()) // cache the generated data since it will be used again in GC adjustment calcs
             mExpectedRatesDataMap.put(geneSummaryData.ChrId, mCurrentExpRatesData);
 
-        final double[] transComboCounts = generateReadCounts(geneSummaryData);
+        double[] transComboCounts = generateReadCounts(geneSummaryData);
 
         double totalCounts = sumVector(transComboCounts);
 
         if(totalCounts == 0)
             return;
 
-        final List<String> transcriptIds = mCurrentExpRatesData.TranscriptIds;
+        List<String> transcriptIds = mCurrentExpRatesData.TranscriptIds;
 
-        final double[] fitAllocations = ExpectationMaxFit.performFit(transComboCounts, mCurrentExpRatesData.getTranscriptDefinitions());
-        final double[] fittedCounts = calculateFittedCounts(mCurrentExpRatesData.getTranscriptDefinitions(), fitAllocations);
+        double[] fitAllocations = ExpectationMaxFit.performFit(transComboCounts, mCurrentExpRatesData.getTranscriptDefinitions());
+        double[] fittedCounts = calculateFittedCounts(mCurrentExpRatesData.getTranscriptDefinitions(), fitAllocations);
         double fitTotal = sumVector(fitAllocations);
 
         SigResiduals residuals = calcResiduals(transComboCounts, fittedCounts, totalCounts);
 
-        ISF_LOGGER.debug(String.format("gene(%s) totalFragments(%.0f) fitTotal(%.0f) residuals(%.0f perc=%.3f)",
+        ISF_LOGGER.trace(format("gene(%s) totalFragments(%.0f) fitTotal(%.0f) residuals(%.0f perc=%.3f)",
                 geneSummaryData.GeneNames, totalCounts, fitTotal, residuals.Total, residuals.Percent));
 
         geneSummaryData.setFitResiduals(residuals.Total);
 
-        final Map<String,Double> transAllocations = geneSummaryData.getFitAllocations();
+        Map<String,Double> transAllocations = geneSummaryData.getFitAllocations();
 
         for(int transIndex = 0; transIndex < transcriptIds.size(); ++transIndex)
         {
-            final String transGeneId = transcriptIds.get(transIndex);
-            final String transName = hasGeneIdentifier(transGeneId) ? transGeneId : transIdMap.get(Integer.parseInt(transGeneId));
+            String transGeneId = transcriptIds.get(transIndex);
+            String transName = hasGeneIdentifier(transGeneId) ? transGeneId : transIdMap.get(Integer.parseInt(transGeneId));
 
             double transAllocation = fitAllocations[transIndex];
 
             if(transAllocation > 0 && ISF_LOGGER.isTraceEnabled())
             {
-                ISF_LOGGER.trace("transcript({}) allocated count({})", transName, String.format("%.2f", transAllocation));
+                ISF_LOGGER.trace("transcript({}) allocated count({})", transName, format("%.2f", transAllocation));
             }
 
-            transAllocations.put(transName, transAllocation);
+            if(transName != null)
+                transAllocations.put(transName, transAllocation);
         }
 
         if(mConfig.WriteTransComboData)
@@ -241,7 +250,7 @@ public class TranscriptExpression
 
     public static void setTranscriptsPerMillion(final List<GeneCollectionSummary> allGeneSummaries, double[] tmpFactors)
     {
-        for(final GeneCollectionSummary geneSummary : allGeneSummaries)
+        for(GeneCollectionSummary geneSummary : allGeneSummaries)
         {
             Map<String,double[]> geneTPMs = Maps.newHashMap();
 
@@ -271,6 +280,73 @@ public class TranscriptExpression
                 geneResult.setTPM(geneTpm[RAW_TPM], geneTpm[ADJUSTED_TPM]);
             }
         }
+    }
+
+    public static void setCohortDistributionValues(
+            final List<GeneCollectionSummary> allGeneSummaries, final CohortGenePercentiles cohortGenePercentiles, final String cancerType,
+            final Map<String,DriverGene> driverGenes)
+    {
+        if(cohortGenePercentiles == null)
+            return;
+
+        boolean useCancerType = cancerType != null && cohortGenePercentiles.hasCancerType(cancerType);
+
+        for(GeneCollectionSummary geneSummary : allGeneSummaries)
+        {
+            for(GeneResult geneResult : geneSummary.GeneResults)
+            {
+                String geneId = geneResult.Gene.GeneId;
+                double tpm = geneResult.adjustedTpm();
+
+                double medianCohort = cohortGenePercentiles.getTpmMedian(geneId, CohortGenePercentiles.PAN_CANCER);
+                double percentileCohort = cohortGenePercentiles.getTpmPercentile(geneId, CohortGenePercentiles.PAN_CANCER, tpm);
+
+                double medianCancer = useCancerType ? cohortGenePercentiles.getTpmMedian(geneId, cancerType) : NO_CANCER_AVAILABLE_VALUE;
+                double percentileCancer = useCancerType ? cohortGenePercentiles.getTpmPercentile(geneId, cancerType, tpm) : NO_CANCER_AVAILABLE_VALUE;
+
+                geneResult.setCohortValues(medianCohort, percentileCohort, medianCancer, percentileCancer);
+
+                if(reportHighExpression(geneResult, useCancerType, cohortGenePercentiles, driverGenes))
+                    geneResult.markReported();
+            }
+        }
+    }
+
+    private static boolean reportHighExpression(
+            final GeneResult geneResult, boolean useCancerType, final CohortGenePercentiles cohortGenePercentiles,
+            final Map<String,DriverGene> driverGenes)
+    {
+        DriverGene driverGene = driverGenes.get(geneResult.Gene.GeneName);
+
+        if(driverGene == null || !driverGene.reportHighExpression())
+            return false;
+
+        double cohortMedian;
+        double cohortPercentile;
+
+        if(useCancerType)
+        {
+            cohortPercentile = geneResult.percentileTpmCancer();
+            cohortMedian = geneResult.medianTpmCancer();
+        }
+        else
+        {
+            cohortPercentile = geneResult.percentileTpmCohort();
+            cohortMedian = cohortGenePercentiles.getTpmMedianAcrossCancerTypes(geneResult.Gene.GeneId);
+        }
+
+        if(cohortMedian <= 0 || cohortPercentile <= 0 || geneResult.adjustedTpm() <= cohortMedian)
+            return false;
+
+        double logFoldChangeMedian = log(geneResult.adjustedTpm() / cohortMedian);
+
+        if(logFoldChangeMedian > HIGH_EXPRESSION_FOLD_CHANGE_HIGH)
+            return true;
+
+        if(logFoldChangeMedian > HIGH_EXPRESSION_FOLD_CHANGE_LOW && cohortPercentile > HIGH_EXPRESSION_PERCENTILE_HIGH)
+            return true;
+
+        return false;
     }
 
     private void loadGeneExpectedRatesData(final String chrId, final List<String> geneIds)
@@ -318,7 +394,7 @@ public class TranscriptExpression
                     if(fragmentCount/totalCounts > 0.20 && fragmentCount > 50)
                     {
                         ISF_LOGGER.debug("category({}) {} fragCount({}) skipped",
-                                categoryKey, tcData.impliedType(), String.format("%.2f", fragmentCount));
+                                categoryKey, tcData.impliedType(), format("%.2f", fragmentCount));
                     }
                     skippedComboCounts += fragmentCount;
                 }
@@ -333,7 +409,7 @@ public class TranscriptExpression
         {
             double skippedPerc = skippedComboCounts/totalCounts;
 
-            ISF_LOGGER.debug(String.format("gene(%d:%s) categories(act=%d exp=%d trans+genes=%d) skippedCounts(%d perc=%.3f of total=%.0f)",
+            ISF_LOGGER.trace(format("gene(%d:%s) categories(act=%d exp=%d trans+genes=%d) skippedCounts(%d perc=%.3f of total=%.0f)",
                     geneSummaryData.GeneIds.size(), geneSummaryData.GeneNames,
                     geneSummaryData.TransCategoryCounts.size(), mCurrentExpRatesData.Categories.size(),
                     mCurrentExpRatesData.TranscriptIds.size(), skippedComboCounts, skippedPerc, totalCounts));
@@ -360,7 +436,7 @@ public class TranscriptExpression
 
                 for(Double gcRatio : tmp.getRatios())
                 {
-                    writer.write(String.format(",Gcr_%.2f", gcRatio));
+                    writer.write(format(",Gcr_%.2f", gcRatio));
                 }
             }
 
@@ -387,7 +463,7 @@ public class TranscriptExpression
                 double count = counts[i];
                 final String category = categories.get(i);
 
-                writer.write(String.format("%s,%s,%.0f,%.1f",
+                writer.write(format("%s,%s,%.0f,%.1f",
                         genesId, category, count, fittedCounts[i]));
 
                 if(writeGcData)
@@ -399,7 +475,7 @@ public class TranscriptExpression
 
                     for(int j = 0; j < gcCounts.length; ++j)
                     {
-                        writer.write(String.format(",%.2f", gcCounts[j]));
+                        writer.write(format(",%.2f", gcCounts[j]));
                     }
                 }
 

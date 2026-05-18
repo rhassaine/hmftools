@@ -9,11 +9,10 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.IntStream;
 
-import com.hartwig.hmftools.qsee.cohort.FeatureMatrix;
-
 import org.junit.Test;
 
 import com.hartwig.hmftools.qsee.feature.Feature;
+import com.hartwig.hmftools.qsee.feature.FeatureKey;
 
 public class FeatureMatrixTest
 {
@@ -49,7 +48,7 @@ public class FeatureMatrixTest
         matrix.addRow("sample4", sample4Features);
 
         List<String> expectedSampleIds = List.of("sample1", "sample2", "sample3", "sample4");
-        List<String> actualSampleIds = matrix.getRowIds();
+        List<String> actualSampleIds = matrix.getSampleIds();
         assertEquals(expectedSampleIds, actualSampleIds);
 
         List<String> actualFeatureNames = matrix.getFeatureKeys().stream().map(x -> x.name()).toList();
@@ -62,18 +61,8 @@ public class FeatureMatrixTest
                 { 3.1, 3.2, 3.3 },
                 { 4.1, 4.2, 4.3 },
         };
-        double[][] actualValues = matrix.getValues();
+        double[][] actualValues = matrix.getFeatureValues();
         assertArrayEquals(expectedValues, actualValues);
-
-        double[][] expectedValuesTransposed = {
-                { 1.1, 2.1, 3.1, 4.1 },
-                { 1.2, 2.2, 3.2, 4.2 },
-                { Double.NaN, Double.NaN, 3.3, 4.3 },
-        };
-        double[][] actualValuesTransposed = matrix.getValuesTransposed();
-
-        assertArrayEquals(expectedValuesTransposed, actualValuesTransposed);
-
     }
 
     @Test
@@ -103,7 +92,7 @@ public class FeatureMatrixTest
         }
 
         // Check row names order
-        List<String> actualSampleIds = matrix.getRowIds();
+        List<String> actualSampleIds = matrix.getSampleIds();
 
         printDiffs(expectedSampleIds, actualSampleIds);
         assertEquals(expectedSampleIds, actualSampleIds);
@@ -117,18 +106,30 @@ public class FeatureMatrixTest
 
         // Check values
         double[][] expectedValues = createExpectedValues(NUM_SAMPLE_THREADS, NUM_FEATURES);
-        double[][] actualValues = matrix.getValues();
+        double[][] actualValues = matrix.getFeatureValues();
         assertArrayEquals(expectedValues, actualValues);
     }
 
     private static Feature createTestFeature(String name, double value)
     {
-        return new Feature(name, value, null, null);
+        FeatureKey key = new FeatureKey(name, null, null);
+        return new Feature(key, value, null);
     }
 
-    private static String formTestSampleId(int sampleIndex) { return String.format("sample%d", sampleIndex); }
-    private static String formTestFeatureName(int featureIndex) { return String.format("feature%d", featureIndex); }
-    private static double formTestFeatureValue(int sampleIndex, int featureIndex) { return sampleIndex + 0.1*featureIndex; }
+    private static String formTestSampleId(int sampleIndex)
+    {
+        return String.format("sample%d", sampleIndex);
+    }
+
+    private static String formTestFeatureName(int featureIndex)
+    {
+        return String.format("feature%d", featureIndex);
+    }
+
+    private static double formTestFeatureValue(int sampleIndex, int featureIndex)
+    {
+        return sampleIndex + 0.1 * featureIndex;
+    }
 
     private Thread createAddRowThread(FeatureMatrix matrix, int sampleIndex, int numFeatures)
     {
@@ -162,12 +163,12 @@ public class FeatureMatrixTest
 
     private <T> void printDiffs(List<T> expected, List<T> actual)
     {
-         for(int i = 0; i < expected.size(); ++i)
-         {
-             if(!expected.get(i).equals(actual.get(i)))
-             {
-                 System.out.printf("index(%d): actual(%s) != expected(%s)\n", i, actual.get(i), expected.get(i));
-             }
-         }
+        for(int i = 0; i < expected.size(); ++i)
+        {
+            if(!expected.get(i).equals(actual.get(i)))
+            {
+                System.out.printf("index(%d): actual(%s) != expected(%s)\n", i, actual.get(i), expected.get(i));
+            }
+        }
     }
 }

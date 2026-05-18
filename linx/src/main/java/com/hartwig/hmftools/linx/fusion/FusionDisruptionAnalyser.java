@@ -2,7 +2,7 @@ package com.hartwig.hmftools.linx.fusion;
 
 import static com.hartwig.hmftools.common.fusion.FusionCommon.FS_DOWN;
 import static com.hartwig.hmftools.common.fusion.FusionCommon.FS_UP;
-import static com.hartwig.hmftools.common.fusion.KnownFusionType.IG_PROMISCUOUS;
+import static com.hartwig.hmftools.common.fusion.KnownFusionType.ENHANCER_PROMISCUOUS;
 import static com.hartwig.hmftools.common.fusion.KnownFusionType.NONE;
 import static com.hartwig.hmftools.common.sv.StartEndIterator.SE_END;
 import static com.hartwig.hmftools.common.sv.StartEndIterator.SE_START;
@@ -33,7 +33,7 @@ import com.hartwig.hmftools.common.perf.PerformanceCounter;
 import com.hartwig.hmftools.common.linx.LinxBreakend;
 import com.hartwig.hmftools.common.linx.LinxFusion;
 import com.hartwig.hmftools.linx.LinxConfig;
-import com.hartwig.hmftools.linx.CohortDataWriter;
+import com.hartwig.hmftools.linx.cohort.CohortDataWriter;
 import com.hartwig.hmftools.linx.chaining.SvChain;
 import com.hartwig.hmftools.linx.fusion.rna.RnaFusionMapper;
 import com.hartwig.hmftools.linx.types.LinkedPair;
@@ -91,7 +91,7 @@ public class FusionDisruptionAnalyser
         mUniqueFusions = Lists.newArrayList();
         mInvalidFusions = Maps.newHashMap();
 
-        mSpecialFusions = new SpecialFusions(mGeneDataCache, mFusionFinder, mFusionConfig);
+        mSpecialFusions = new SpecialFusions(mGeneDataCache, mFusionFinder);
 
         mRnaFusionMapper = null;
 
@@ -287,7 +287,7 @@ public class FusionDisruptionAnalyser
     private void findSingleSVFusions(final List<SvVarData> svList)
     {
         // always report SVs by themselves
-        for(final SvVarData var : svList)
+        for(SvVarData var : svList)
         {
             if(var.isSglBreakend() && var.getSglMappings().isEmpty())
                 continue;
@@ -296,15 +296,15 @@ public class FusionDisruptionAnalyser
             if(var.getCluster().getSvCount() > 1 && var.getCluster().findChain(var) != null)
             {
                 boolean igCandidate = !var.isSglBreakend()
-                        && (mFusionFinder.getKnownFusionCache().withinIgRegion(var.chromosome(true), var.position(true))
-                        != mFusionFinder.getKnownFusionCache().withinIgRegion(var.chromosome(false), var.position(false)));
+                        && (mFusionFinder.getKnownFusionCache().withinEnhancerRegion(var.chromosome(true), var.position(true))
+                        != mFusionFinder.getKnownFusionCache().withinEnhancerRegion(var.chromosome(false), var.position(false)));
 
                 if(!igCandidate)
                     continue;
             }
 
-            final List<BreakendGeneData> genesListStart = getBreakendGeneList(var, true);
-            final List<BreakendGeneData> genesListEnd =  getBreakendGeneList(var, false);
+            List<BreakendGeneData> genesListStart = getBreakendGeneList(var, true);
+            List<BreakendGeneData> genesListEnd =  getBreakendGeneList(var, false);
 
             if(genesListStart.isEmpty() || genesListEnd.isEmpty())
                 continue;
@@ -764,7 +764,7 @@ public class FusionDisruptionAnalyser
             final List<BreakendGeneData> genesList = var.getGenesList(false);
 
             // take the genes if any are in an IG region
-            if(var.getSglMappings().stream().anyMatch(x -> mFusionFinder.getKnownFusionCache().withinIgRegion(x.Chromosome, x.Position)))
+            if(var.getSglMappings().stream().anyMatch(x -> mFusionFinder.getKnownFusionCache().withinEnhancerRegion(x.Chromosome, x.Position)))
                 return genesList;
 
             // otherwise check known pairs (including IG pair 3' genes)
@@ -836,7 +836,7 @@ public class FusionDisruptionAnalyser
         if(!fusion.validChainTraversal() && !allowSuspectChains(fusion.knownType()))
             return false;
 
-        if(!fusion.isIG() && fusion.downstreamTrans().hasNegativePrevSpliceAcceptorDistance())
+        if(!fusion.isEnhancer() && fusion.downstreamTrans().hasNegativePrevSpliceAcceptorDistance())
             return false;
 
         return true;
@@ -870,7 +870,7 @@ public class FusionDisruptionAnalyser
 
             // IG promiscuous fusions are not reportable but need to all be recorded
             List<GeneFusion> candidates = similarFusions.stream()
-                    .filter(x -> x.knownType() == IG_PROMISCUOUS)
+                    .filter(x -> x.knownType() == ENHANCER_PROMISCUOUS)
                     .filter(x -> x.downstreamTrans().TransData.IsCanonical)
                     .collect(Collectors.toList());
 
@@ -973,9 +973,9 @@ public class FusionDisruptionAnalyser
         if(mVisSampleData == null || !mConfig.Output.writeVisualisationData())
             return;
 
-        final List<VisFusion> visFusions = Lists.newArrayList();
+        List<VisFusion> visFusions = Lists.newArrayList();
 
-        for(final GeneFusion fusion : fusionList)
+        for(GeneFusion fusion : fusionList)
         {
             if(fusion.reportable() || mFusionConfig.WriteAllVisFusions)
             {

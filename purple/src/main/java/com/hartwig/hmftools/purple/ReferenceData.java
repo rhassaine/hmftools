@@ -4,11 +4,16 @@ import static com.hartwig.hmftools.common.genome.gc.GCProfileFactory.GC_PROFILE;
 import static com.hartwig.hmftools.common.genome.gc.GCProfileFactory.addGcProfilePath;
 import static com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource.REF_GENOME;
 import static com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource.addRefGenomeConfig;
+import static com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource.deriveRefGenomeVersion;
+import static com.hartwig.hmftools.common.genome.refgenome.RefGenomeVersion.REF_GENOME_VERSION;
 import static com.hartwig.hmftools.common.genome.refgenome.RefGenomeVersion.V37;
 import static com.hartwig.hmftools.common.genome.refgenome.RefGenomeVersion.V38;
 import static com.hartwig.hmftools.common.hla.HlaCommon.hlaChromosome;
 import static com.hartwig.hmftools.common.utils.config.CommonConfig.TARGET_REGIONS_BED;
 import static com.hartwig.hmftools.common.utils.config.CommonConfig.TARGET_REGIONS_BED_DESC;
+import static com.hartwig.hmftools.purple.PurpleConstants.DEFAULT_CODING_BASE_FACTOR;
+import static com.hartwig.hmftools.purple.PurpleConstants.DEFAULT_TARGETED_TMB_RATIO;
+import static com.hartwig.hmftools.purple.PurpleConstants.DEFAULT_TARGETED_TML_RATIO;
 import static com.hartwig.hmftools.purple.PurpleUtils.PPL_LOGGER;
 import static com.hartwig.hmftools.purple.SampleDataFiles.GERMLINE_VARIANTS;
 import static com.hartwig.hmftools.purple.tools.GenerateGermlineAmpDelFrequency.COHORT_AMP_DEL_FREQ_FILE;
@@ -32,6 +37,7 @@ import com.hartwig.hmftools.common.genome.chromosome.HumanChromosome;
 import com.hartwig.hmftools.common.genome.position.GenomePosition;
 import com.hartwig.hmftools.common.genome.position.GenomePositions;
 import com.hartwig.hmftools.common.genome.refgenome.RefGenomeCoordinates;
+import com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource;
 import com.hartwig.hmftools.common.genome.refgenome.RefGenomeVersion;
 import com.hartwig.hmftools.common.hla.HlaCommon;
 import com.hartwig.hmftools.common.utils.config.ConfigBuilder;
@@ -43,12 +49,10 @@ import com.hartwig.hmftools.purple.targeted.TargetRegionsData;
 
 import org.apache.logging.log4j.util.Strings;
 
-import htsjdk.samtools.reference.IndexedFastaSequenceFile;
-
 public class ReferenceData
 {
     public final RefGenomeVersion RefGenVersion;
-    public final IndexedFastaSequenceFile RefGenome;
+    public final RefGenomeSource RefGenome;
 
     public final Map<Chromosome, GenomePosition> ChromosomeLengths;
     public final Map<Chromosome, GenomePosition> Centromeres;
@@ -70,9 +74,6 @@ public class ReferenceData
     private static final String SOMATIC_HOTSPOT = "somatic_hotspots";
     private static final String GERMLINE_HOTSPOT = "germline_hotspots";
 
-    private static final String TARGET_REGIONS_RATIOS = "target_regions_ratios";
-    private static final String TARGET_REGION_MSI_INDELS = "target_regions_msi_indels";
-
     public ReferenceData(final ConfigBuilder configBuilder, final PurpleConfig config)
     {
         mIsValid = true;
@@ -86,21 +87,13 @@ public class ReferenceData
         final String refGenomePath = configBuilder.getValue(REF_GENOME);
         GcProfileFilename = configBuilder.getValue(GC_PROFILE);
 
-        IndexedFastaSequenceFile refGenome = null;
+        RefGenome = RefGenomeSource.loadRefGenome(refGenomePath);
 
-        try
-        {
-            refGenome = new IndexedFastaSequenceFile(new File(refGenomePath));
-        }
-        catch(Exception e)
-        {
-            mIsValid = false;
-            PPL_LOGGER.error("failed to load ref genome: {}", e.toString());
-        }
+        if(configBuilder.hasValue(REF_GENOME_VERSION))
+            RefGenVersion = RefGenomeVersion.from(configBuilder);
+        else
+            RefGenVersion = deriveRefGenomeVersion(RefGenome);
 
-        RefGenome = refGenome;
-
-        RefGenVersion = RefGenomeVersion.from(configBuilder);
         PPL_LOGGER.info("using ref genome: {}", RefGenVersion);
 
         ChromosomeLengths = Maps.newHashMap();
@@ -192,9 +185,7 @@ public class ReferenceData
         String germlineDeletionFreqFile = config.runGermline() ? configBuilder.getValue(COHORT_AMP_DEL_FREQ_FILE) : null;
         CohortGermlineDeletions = new GermlineAmpDelFrequencyCache(germlineDeletionFreqFile);
 
-        TargetRegions = new TargetRegionsData(
-                configBuilder.getValue(TARGET_REGIONS_RATIOS), configBuilder.getValue(TARGET_REGION_MSI_INDELS));
-
+        TargetRegions = new TargetRegionsData(configBuilder);
         TargetRegions.loadTargetRegionsBed(configBuilder.getValue(TARGET_REGIONS_BED), GeneTransCache);
     }
 
@@ -213,9 +204,6 @@ public class ReferenceData
         {
             List<String> additionalTransNames = Lists.newArrayList();
             OtherReportableTranscripts.values().forEach(x -> additionalTransNames.addAll(x));
-
-            PPL_LOGGER.debug("loaded {} alternative transcripts from {} genes",
-                    additionalTransNames.size(), OtherReportableTranscripts.size());
 
             GeneTransCache.setRequiredData(true, false, false, true);
             mIsValid &= GeneTransCache.load(true);
@@ -242,8 +230,8 @@ public class ReferenceData
         addGcProfilePath(configBuilder, false);
         configBuilder.addPath(COHORT_AMP_DEL_FREQ_FILE, false, "Path to cohort germline deletions frequency file");
         configBuilder.addPath(TARGET_REGIONS_BED, false, TARGET_REGIONS_BED_DESC);
-        configBuilder.addPath(TARGET_REGIONS_RATIOS, false, "Path to target regions ratios file");
-        configBuilder.addPath(TARGET_REGION_MSI_INDELS, false, "Path to target regions MSI INDELs file");
+        TargetRegionsData.registerConfig(configBuilder);
+
         EnsemblDataCache.addEnsemblDir(configBuilder, true);
         DriverGenePanelConfig.addGenePanelOption(configBuilder, false);
     }
@@ -276,6 +264,6 @@ public class ReferenceData
         SomaticHotspots = ArrayListMultimap.create();
         GermlineHotspots = ArrayListMultimap.create();
         CohortGermlineDeletions = new GermlineAmpDelFrequencyCache(null);
-        TargetRegions = new TargetRegionsData(null, null);
+        TargetRegions = new TargetRegionsData(DEFAULT_CODING_BASE_FACTOR, DEFAULT_TARGETED_TMB_RATIO, DEFAULT_TARGETED_TML_RATIO);
     }
 }

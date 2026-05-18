@@ -38,7 +38,6 @@ public final class CommonConfig
     public static final String RNA_BAM = "rna_bam";
     public static final String RNA_BAM_DESC = "RNA BAM file";
 
-
     public static final String LOG_READ_IDS = "log_read_ids";
     public static final String LOG_READ_IDS_DESC = "Log specific read IDs, separated by ';'";
 
@@ -51,6 +50,9 @@ public final class CommonConfig
     public static final String TARGET_REGIONS_BED = "target_regions_bed";
     public static final String TARGET_REGIONS_BED_DESC = "Target regions BED file";
 
+    public static final String BLACKLISTED_SITES = "blacklisted_sites";
+    public static final String BLACKLISTED_SITES_DESC = "Blacklisted sites file";
+
     public static final String SAMPLE_DATA_DIR_CFG = "sample_data_dir";
     public static final String SAMPLE_DATA_DIR_DESC = "Path to sample pipeline files";
 
@@ -59,6 +61,12 @@ public final class CommonConfig
 
     public static final String AMBER_DIR_CFG = toolDirectory("amber");
     public static final String AMBER_DIR_DESC = toolDirectoryDesc("Amber");
+
+    public static final String BAM_METRICS_TUMOR_DIR_CFG = toolDirectory("bam_metrics_tumor");
+    public static final String BAM_METRICS_TUMOR_DIR_DESC = toolDirectoryDesc("BamMetrics tumor");
+
+    public static final String BAM_METRICS_REF_DIR_CFG = toolDirectory("bam_metrics_ref");
+    public static final String BAM_METRICS_REF_DIR_DESC = toolDirectoryDesc("BamMetrics reference");
 
     public static final String CHORD_DIR_CFG = toolDirectory("chord");
     public static final String CHORD_DIR_DESC = toolDirectoryDesc("Chord");
@@ -93,6 +101,12 @@ public final class CommonConfig
     public static final String NEO_DIR_CFG = toolDirectory("neo");
     public static final String NEO_DIR_DESC = toolDirectoryDesc("Neo");
 
+    public static final String PAVE_SOMATIC_DIR_CFG = toolDirectory("pave_somatic");
+    public static final String PAVE_SOMATIC_DIR_DESC = toolDirectoryDesc("Pave somatic");
+
+    public static final String PAVE_GERMLINE_DIR_CFG = toolDirectory("pave_germline");
+    public static final String PAVE_GERMLINE_DIR_DESC = toolDirectoryDesc("Pave germline");
+
     public static final String PEACH_DIR_CFG = toolDirectory("peach");
     public static final String PEACH_DIR_DESC = toolDirectoryDesc("Peach");
 
@@ -102,11 +116,23 @@ public final class CommonConfig
     public static final String PURPLE_PLOT_DIR_CFG = toolDirectory("purple_plot");
     public static final String PURPLE_PLOT_DIR_DESC = toolPlotsDirectoryDesc("Purple");
 
+    public static final String QSEE_DIR_CFG = toolDirectory("qsee");
+    public static final String QSEE_DIR_DESC = toolDirectoryDesc("QSee");
+
     public static final String REDUX_DIR_CFG = toolDirectory("redux");
     public static final String REDUX_DIR_DESC = toolDirectoryDesc("Redux");
 
+    public static final String REDUX_TUMOR_DIR_CFG = toolDirectory("redux_tumor");
+    public static final String REDUX_TUMOR_DIR_DESC = toolDirectoryDesc("Redux tumor");
+
+    public static final String REDUX_REF_DIR_CFG = toolDirectory("redux_ref");
+    public static final String REDUX_REF_DIR_DESC = toolDirectoryDesc("Redux reference");
+
     public static final String SAGE_DIR_CFG = toolDirectory("sage");
     public static final String SAGE_DIR_DESC = toolDirectoryDesc("Sage");
+
+    public static final String SAGE_PLOT_DIR_CFG = toolDirectory("sage_plot");
+    public static final String SAGE_PLOT_DIR_DESC = toolPlotsDirectoryDesc("Sage");
 
     public static final String SAGE_GERMLINE_DIR_CFG = toolDirectory("sage_germline");
     public static final String SAGE_GERMLINE_DIR_DESC = toolDirectoryDesc("Sage germline");
@@ -123,22 +149,31 @@ public final class CommonConfig
     public static final String V_CHORD_DIR_CFG = toolDirectory("vchord");
     public static final String V_CHORD_DIR_DESC = toolDirectoryDesc("vChord");
 
-    public static final String TUMOR_METRICS_DIR_CFG = "tumor_metrics_dir";
-    public static final String TUMOR_METRICS_DIR_DESC = "Path to sample metrics directory";
+    private static String toolDirectory(final String toolName)
+    {
+        return format("%s_dir", toolName);
+    }
 
-    public static final String REF_METRICS_DIR_CFG = "ref_metrics_dir";
-    public static final String REF_METRICS_DIR_DESC = "Path to reference metrics directory";
+    private static String toolDirectoryDesc(final String toolName)
+    {
+        return format("Path to %s pipeline files", toolName);
+    }
 
-    private static String toolDirectory(final String toolName) { return format("%s_dir", toolName); }
-    private static String toolDirectoryDesc(final String toolName) { return format("Path to %s pipeline files", toolName); }
-    private static String toolPlotsDirectoryDesc(final String toolName) { return format("Path to %s plots", toolName); }
+    private static String toolPlotsDirectoryDesc(final String toolName)
+    {
+        return format("Path to %s plots", toolName);
+    }
 
     public static List<String> parseLogReadIds(final ConfigBuilder configBuilder)
     {
         if(configBuilder.hasValue(LOG_READ_IDS))
+        {
             return Arrays.stream(configBuilder.getValue(LOG_READ_IDS).split(ITEM_DELIM, -1)).collect(Collectors.toList());
+        }
         else
+        {
             return Collections.emptyList();
+        }
 
     }
 }

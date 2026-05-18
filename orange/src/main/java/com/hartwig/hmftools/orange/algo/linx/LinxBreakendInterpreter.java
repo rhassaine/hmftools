@@ -1,12 +1,17 @@
 package com.hartwig.hmftools.orange.algo.linx;
 
+import static com.hartwig.hmftools.orange.algo.linx.LinxInterpreter.findReportableLinxPlot;
+
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.hartwig.hmftools.common.ensemblcache.EnsemblDataCache;
-import com.hartwig.hmftools.common.gene.GeneData;
+import com.google.common.collect.Lists;
+import com.hartwig.hmftools.common.driver.DriverCatalog;
+import com.hartwig.hmftools.common.driver.DriverType;
+import com.hartwig.hmftools.common.genome.chromosome.CytoBands;
 import com.hartwig.hmftools.common.linx.LinxSvAnnotation;
 import com.hartwig.hmftools.datamodel.driver.ReportedStatus;
 import com.hartwig.hmftools.datamodel.gene.TranscriptCodingType;
@@ -14,29 +19,93 @@ import com.hartwig.hmftools.datamodel.gene.TranscriptRegionType;
 import com.hartwig.hmftools.datamodel.linx.ImmutableLinxBreakend;
 import com.hartwig.hmftools.datamodel.linx.LinxBreakend;
 import com.hartwig.hmftools.datamodel.linx.LinxBreakendType;
+import com.hartwig.hmftools.datamodel.linx.LinxDriverType;
 import com.hartwig.hmftools.datamodel.linx.LinxGeneOrientation;
 
-public class LinxBreakendInterpreter
+public final class LinxBreakendInterpreter
 {
-    private final Map<Integer, LinxSvAnnotation> mLinxSvAnnotationsMap;
-    private final EnsemblDataCache mEnsemblDataCache;
-
-    public LinxBreakendInterpreter(final List<LinxSvAnnotation> linxSvAnnotations, final EnsemblDataCache ensemblDataCache)
+    public static List<LinxBreakend> buildSomaticBreakends(final LinxData linxData, final CytoBands cytoBands)
     {
-        mLinxSvAnnotationsMap = linxSvAnnotations.stream().collect(Collectors.toMap(LinxSvAnnotation::svId, s -> s));
-        mEnsemblDataCache = ensemblDataCache;
+        List<LinxBreakend> reportedBreakends = Lists.newArrayList();
+
+        Map<Integer,LinxSvAnnotation> svAnnotationsMap = linxData.somaticSvAnnotations().stream()
+                .collect(Collectors.toMap(LinxSvAnnotation::svId, s -> s));
+
+        for(com.hartwig.hmftools.common.linx.LinxBreakend breakend : linxData.somaticBreakends())
+        {
+            if(breakend.reportedStatus() != com.hartwig.hmftools.common.purple.ReportedStatus.REPORTED)
+                continue;
+
+            LinxBreakend convertedBreakend = build(
+                    breakend, svAnnotationsMap, linxData.somaticDrivers(), cytoBands, linxData.reportableEventPlots());
+
+            reportedBreakends.add(convertedBreakend);
+        }
+
+        return reportedBreakends;
     }
 
-    public LinxBreakend interpret(com.hartwig.hmftools.common.linx.LinxBreakend linxBreakend)
+    public static List<LinxBreakend> buildGermlineBreakends(final LinxData linxData, final CytoBands cytoBands)
     {
-        LinxSvAnnotation svAnnotation = mLinxSvAnnotationsMap.get(linxBreakend.svId());
+        if(linxData.germlineSvAnnotations() == null)
+            return null;
+
+        List<LinxBreakend> reportedBreakends = Lists.newArrayList();
+
+        Map<Integer,LinxSvAnnotation> svAnnotationsMap = linxData.germlineSvAnnotations().stream()
+                .collect(Collectors.toMap(LinxSvAnnotation::svId, s -> s));
+
+        for(com.hartwig.hmftools.common.linx.LinxBreakend breakend : linxData.germlineBreakends())
+        {
+            if(breakend.reportedStatus() != com.hartwig.hmftools.common.purple.ReportedStatus.REPORTED)
+                continue;
+
+            LinxBreakend convertedBreakend = build(
+                    breakend, svAnnotationsMap, linxData.germlineDrivers(), cytoBands, Collections.emptyList());
+
+            reportedBreakends.add(convertedBreakend);
+        }
+
+        return reportedBreakends;
+    }
+
+    public static LinxBreakend build(
+            final com.hartwig.hmftools.common.linx.LinxBreakend linxBreakend, final Map<Integer, LinxSvAnnotation> svAnnotationsMap,
+            final List<DriverCatalog> drivers, final CytoBands cytoBands, final List<String> linxPlots)
+    {
+        LinxSvAnnotation svAnnotation = svAnnotationsMap.get(linxBreakend.svId());
+
+        String breakendCoords = linxBreakend.isStart() ? svAnnotation.coordsStart() : svAnnotation.coordsEnd();
+
+        String chromosome = com.hartwig.hmftools.common.linx.LinxBreakend.chromosomeFromCoords(breakendCoords);
+        int position = com.hartwig.hmftools.common.linx.LinxBreakend.positionFromCoords(breakendCoords);
+        byte orientation = com.hartwig.hmftools.common.linx.LinxBreakend.orientationFromCoords(breakendCoords);
+
+        String cytoBand = cytoBands.getCytoBandName(chromosome, position);
+
+        DriverCatalog driverCatalog = drivers.stream().filter(x -> x.gene().equals(linxBreakend.gene())).findFirst().orElse(null);
+
+        LinxDriverType driverType = LinxDriverType.DISRUPTION;
+        double driverLikelihood = 0;
+
+        if(driverCatalog != null)
+        {
+            if(driverCatalog.driver() != DriverType.GERMLINE_DISRUPTION)
+                driverType = LinxDriverType.valueOf(driverCatalog.driver().toString());
+
+            driverLikelihood = driverCatalog.driverLikelihood();
+        }
+
+        String plotFilename = findReportableLinxPlot(linxPlots, svAnnotation.clusterId());
 
         return ImmutableLinxBreakend.builder()
                 .id(linxBreakend.id())
                 .svId(linxBreakend.svId())
+                .clusterId(svAnnotation.clusterId())
                 .gene(linxBreakend.gene())
-                .chromosome(chromosome(svAnnotation, linxBreakend.isStart()))
-                .chromosomeBand(chromosomeBand(linxBreakend.gene()))
+                .chromosome(chromosome)
+                .position(position)
+                .chromosomeBand(cytoBand)
                 .transcript(linxBreakend.transcriptId())
                 .isCanonical(linxBreakend.canonical())
                 .geneOrientation(linxBreakend.geneOrientation().equals(com.hartwig.hmftools.common.linx.LinxBreakend.BREAKEND_ORIENTATION_UPSTREAM) ?
@@ -48,32 +117,14 @@ public class LinxBreakendInterpreter
                 .regionType(TranscriptRegionType.valueOf(linxBreakend.regionType().name()))
                 .codingType(TranscriptCodingType.valueOf(linxBreakend.codingType().name()))
                 .nextSpliceExonRank(linxBreakend.nextSpliceExonRank())
-                .orientation(orientation(svAnnotation, linxBreakend.isStart()))
+                .orientation(orientation)
                 .exonUp(linxBreakend.exonUp())
                 .exonDown(linxBreakend.exonDown())
                 .junctionCopyNumber(junctionCopyNumber(svAnnotation))
+                .driverType(driverType)
+                .driverLikelihood(driverLikelihood)
+                .plotFilename(plotFilename)
                 .build();
-    }
-
-    private static String chromosome(final LinxSvAnnotation svAnnotation, boolean isStart)
-    {
-        if(svAnnotation == null)
-            return "";
-
-        String coords = isStart ? svAnnotation.coordsStart() : svAnnotation.coordsEnd();
-        return com.hartwig.hmftools.common.linx.LinxBreakend.chromosomeFromCoords(coords);
-    }
-
-    private static byte orientation(final LinxSvAnnotation svAnnotation, boolean isStart)
-    {
-        String coords = isStart ? svAnnotation.coordsStart() : svAnnotation.coordsEnd();
-        return com.hartwig.hmftools.common.linx.LinxBreakend.orientationFromCoords(coords);
-    }
-
-    private String chromosomeBand(final String gene)
-    {
-        GeneData geneData = mEnsemblDataCache.getGeneDataByName(gene);
-        return geneData != null ? geneData.KaryotypeBand : "";
     }
 
     @VisibleForTesting

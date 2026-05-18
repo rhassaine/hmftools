@@ -7,6 +7,8 @@ import static com.hartwig.hmftools.redux.jitter.JitterConstants.DUAL_BASE_3;
 import static com.hartwig.hmftools.redux.jitter.JitterConstants.DUAL_BASE_4;
 import static com.hartwig.hmftools.redux.jitter.JitterConstants.SINGLE_BASE_1;
 import static com.hartwig.hmftools.redux.jitter.JitterConstants.SINGLE_BASE_2;
+import static com.hartwig.hmftools.redux.ms_model.MsModelParams.MODEL_PARAMS_DEFAULT;
+import static com.hartwig.hmftools.redux.ms_model.MsModelParams.sequencingTypeParams;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -26,7 +28,11 @@ import com.hartwig.hmftools.common.redux.JitterModelParams;
 import com.hartwig.hmftools.common.redux.JitterModelParamsFile;
 import com.hartwig.hmftools.common.redux.JitterTableRow;
 import com.hartwig.hmftools.common.bam.ConsensusType;
+import com.hartwig.hmftools.common.redux.MsiModelPrediction;
 import com.hartwig.hmftools.common.utils.RExecutor;
+import com.hartwig.hmftools.redux.ReduxConfig;
+import com.hartwig.hmftools.redux.ms_model.MsModelCalculator;
+import com.hartwig.hmftools.redux.ms_model.MsModelParams;
 
 import htsjdk.samtools.SAMRecord;
 
@@ -73,17 +79,41 @@ public class MsJitterAnalyser
                     mConfig.OutputDir, mConfig.SampleId), microsatelliteSiteData, consensusTypes());
         }
 
-        final String statsTableFile = JitterCountsTableFile.generateFilename(mConfig.OutputDir, mConfig.SampleId);
-        writeMicrosatelliteStatsTable(microsatelliteSiteData, statsTableFile);
+        List<JitterCountsTable> jitterCountsTable = Lists.newArrayList();
 
-        // draw a chart of the 9 ms profiles
-        if(mConfig.WritePlots)
-            drawMicrosatelliteCharts(mConfig.OutputDir, mConfig.SampleId, statsTableFile);
+        for(ConsensusType consensusType : consensusTypes())
+        {
+            for(MicrosatelliteSelector s : createMicrosatelliteSelectorsForCharts())
+            {
+                JitterCountsTable msStatsTable = buildJitterCountsTable(
+                        s.unitName(), consensusType, microsatelliteSiteData.stream().filter(s::select).collect(Collectors.toList()));
+
+                jitterCountsTable.add(msStatsTable);
+            }
+        }
+
+        writeMicrosatelliteStatsTable(jitterCountsTable);
+
+        if(mConfig.runMsiPrediction())
+            writeMsModelPrediction(jitterCountsTable);
 
         // now perform the fitting
         List<JitterModelParams> jitterModelParamsList = fitJitterModels(microsatelliteSiteData);
 
         JitterModelParamsFile.write(JitterModelParamsFile.generateFilename(mConfig.OutputDir, mConfig.SampleId), jitterModelParamsList);
+    }
+
+    private void writeMsModelPrediction(final List<JitterCountsTable> jitterCountsTable) throws IOException
+    {
+        MsModelParams modelParams = sequencingTypeParams(ReduxConfig.SEQUENCING_TYPE);
+
+        MsModelCalculator modelCalculator = new MsModelCalculator(
+                modelParams, mConfig.MsModelCoefficientsFile, mConfig.MsModelErroRatesFile);
+
+        double predictedValue = modelCalculator.calcPredictedMsiRate(jitterCountsTable);
+
+        String filename = MsiModelPrediction.generateFilename(mConfig.OutputDir, mConfig.SampleId);
+        MsiModelPrediction.write(filename, predictedValue);
     }
 
     private List<MicrosatelliteSite> loadRefGenomeMicrosatellites()
@@ -100,23 +130,15 @@ public class MsJitterAnalyser
         return microsatelliteSites;
     }
 
-    private void writeMicrosatelliteStatsTable(
-            final Collection<MicrosatelliteSiteData> microsatelliteSiteData, final String filename)
+    private void writeMicrosatelliteStatsTable(List<JitterCountsTable> jitterCountsTable) throws IOException, InterruptedException
     {
-        List<JitterCountsTable> msStatsTables = Lists.newArrayList();
+        String statsTableFile = JitterCountsTableFile.generateFilename(mConfig.OutputDir, mConfig.SampleId);
 
-        for(ConsensusType consensusType : consensusTypes())
-        {
-            for(MicrosatelliteSelector s : createMicrosatelliteSelectorsForCharts())
-            {
-                JitterCountsTable msStatsTable = buildJitterCountsTable(
-                        s.unitName(), consensusType, microsatelliteSiteData.stream().filter(s::select).collect(Collectors.toList()));
+        JitterCountsTableFile.write(statsTableFile, jitterCountsTable);
 
-                msStatsTables.add(msStatsTable);
-            }
-        }
-
-        JitterCountsTableFile.write(filename, msStatsTables);
+        // draw a chart of the 9 ms profiles
+        if(mConfig.WritePlots)
+            drawMicrosatelliteCharts(statsTableFile);
     }
 
     static JitterCountsTable buildJitterCountsTable(
@@ -220,10 +242,9 @@ public class MsJitterAnalyser
         return fittedParams;
     }
 
-    private static void drawMicrosatelliteCharts(final String outputDir, final String sampleId, final String statsTableFile)
-            throws IOException, InterruptedException
+    private void drawMicrosatelliteCharts(final String statsTableFile) throws IOException, InterruptedException
     {
-        int result = RExecutor.executeFromClasspath("basequal/msi_jitter_plot.R", outputDir, sampleId, statsTableFile);
+        int result = RExecutor.executeFromClasspath("basequal/msi_jitter_plot.R", mConfig.OutputDir, mConfig.SampleId, statsTableFile);
         if(result != 0)
             throw new IOException("R execution failed. Unable to complete segmentation.");
     }

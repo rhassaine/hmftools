@@ -6,9 +6,17 @@ import static com.hartwig.hmftools.purple.PurpleConstants.WINDOW_SIZE;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+
+import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.ListMultimap;
+import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.hartwig.hmftools.common.amber.AmberBAF;
 import com.hartwig.hmftools.common.amber.AmberBAFFile;
@@ -27,8 +35,8 @@ public class AmberData
 {
     private static int DEFAULT_READ_DEPTH = 100;
 
-    public final Multimap<Chromosome,AmberBAF> ChromosomeBafs;
-    public final Multimap<Chromosome,PCFPosition> TumorSegments;
+    public final ListMultimap<Chromosome, AmberBAF> ChromosomeBafs;
+    public final Map<Chromosome,List<PCFPosition>> TumorSegments;
 
     public final int AverageTumorDepth;
     public final double Contamination;
@@ -38,8 +46,8 @@ public class AmberData
     private static final double MIN_SOMATIC_TOTAL_READ_COUNT_PROPORTION = 0.8;
 
     public AmberData(
-            final String sampleId, final String amberDirectory, final boolean germlineOnlyMode, final RefGenomeVersion refGenVersion)
-            throws ParseException, IOException
+            final String sampleId, final String amberDirectory, final boolean germlineOnlyMode, final RefGenomeVersion refGenVersion,
+            @Nullable final Double chrXRegionPercentage) throws ParseException, IOException
     {
         String qcFile = AmberQCFile.generateFilename(amberDirectory, sampleId);
         if(!new File(qcFile).exists())
@@ -74,7 +82,7 @@ public class AmberData
         }
         else
         {
-            TumorSegments = ArrayListMultimap.create();
+            TumorSegments = Collections.emptyMap();
         }
 
         AverageTumorDepth = (int) Math.round(ChromosomeBafs.values()
@@ -84,7 +92,7 @@ public class AmberData
                 .average()
                 .orElse(DEFAULT_READ_DEPTH));
 
-        PatientGender = determineGender(refGenVersion, ChromosomeBafs);
+        PatientGender = determineGender(refGenVersion, ChromosomeBafs, chrXRegionPercentage);
 
         PPL_LOGGER.info("Amber average tumor depth({}) ambiguous BAF({})",
                 AverageTumorDepth, String.format("%.3f", ExpectedBAF.expectedBAF(AverageTumorDepth)));
@@ -94,6 +102,7 @@ public class AmberData
     {
         return (int) Math.floor(MIN_SOMATIC_TOTAL_READ_COUNT_PROPORTION * AverageTumorDepth);
     }
+
     public int maxSomaticTotalReadCount()
     {
         return (int) Math.ceil(MAX_SOMATIC_TOTAL_READ_COUNT_PROPORTION * AverageTumorDepth);
@@ -109,7 +118,7 @@ public class AmberData
     public AmberData(int averageTumorDepth, final Gender patientGender)
     {
         ChromosomeBafs = ArrayListMultimap.create();
-        TumorSegments = ArrayListMultimap.create();
+        TumorSegments = Maps.newHashMap();
 
         AverageTumorDepth = averageTumorDepth;
         Contamination = 0;

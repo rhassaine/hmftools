@@ -3,6 +3,7 @@ package com.hartwig.hmftools.isofox;
 import static com.hartwig.hmftools.isofox.FragmentAllocator.calcFragmentLength;
 import static com.hartwig.hmftools.isofox.IsofoxFunction.TRANSCRIPT_COUNTS;
 import static com.hartwig.hmftools.isofox.ReadCountsTest.REF_BASE_STR_1;
+import static com.hartwig.hmftools.isofox.TestUtils.ALT_SJ_COHORT_CACHE;
 import static com.hartwig.hmftools.isofox.TestUtils.CHR_1;
 import static com.hartwig.hmftools.isofox.TestUtils.GENE_ID_1;
 import static com.hartwig.hmftools.isofox.TestUtils.GENE_NAME_1;
@@ -29,7 +30,7 @@ import com.hartwig.hmftools.isofox.common.FragmentType;
 import com.hartwig.hmftools.isofox.common.FragmentTypeCounts;
 import com.hartwig.hmftools.isofox.common.GeneCollection;
 import com.hartwig.hmftools.isofox.common.GeneReadData;
-import com.hartwig.hmftools.isofox.common.ReadRecord;
+import com.hartwig.hmftools.isofox.common.Read;
 import com.hartwig.hmftools.isofox.common.RegionReadData;
 import com.hartwig.hmftools.isofox.results.ResultsWriter;
 
@@ -49,7 +50,7 @@ public class TransClassificationTest
         RegionReadData region = createRegion("GEN01", trans1, 1, "1", 100, 200);
 
         // unspliced read does not support the transcript
-        ReadRecord read = createReadRecord(1, "1", 90, 110, REF_BASE_STR_1, createCigar(0, 21, 0));
+        Read read = createReadRecord(1, "1", 90, 110, REF_BASE_STR_1, createCigar(0, 21, 0));
 
         List<RegionReadData> regions = Lists.newArrayList(region);
         read.processOverlappingRegions(regions);
@@ -139,7 +140,7 @@ public class TransClassificationTest
         region3.addPreRegion(region2);
 
         String readBases = REF_BASE_STR_1.substring(REF_BASE_STR_1.length() - 1) + REF_BASE_STR_1 + REF_BASE_STR_1.substring(0, 10);
-        ReadRecord read = createReadRecord(1, CHR_1, 200, 309, readBases, createCigar(1, 20, 80, 10, 0));
+        Read read = createReadRecord(1, CHR_1, 200, 309, readBases, createCigar(1, 20, 80, 10, 0));
 
         List<RegionReadData> regions = Lists.newArrayList(region2, region3);
         read.processOverlappingRegions(regions);
@@ -183,8 +184,8 @@ public class TransClassificationTest
         transData.exons().add(new ExonData(TRANS_1, 5500, 6000, 4, -1, -1));
 
         // within 1st exon
-        ReadRecord read1 = createReadRecord(1, CHR_1, 1010, 1029, REF_BASE_STR_1, createCigar(0, 20, 0));
-        ReadRecord read2 = createReadRecord(1, CHR_1, 1170, 1199, REF_BASE_STR_1, createCigar(0, 20, 0));
+        Read read1 = createReadRecord(1, CHR_1, 1010, 1029, REF_BASE_STR_1, createCigar(0, 20, 0));
+        Read read2 = createReadRecord(1, CHR_1, 1170, 1199, REF_BASE_STR_1, createCigar(0, 20, 0));
 
         int fragLength = calcFragmentLength(transData, read1, read2);
         assertEquals(190, fragLength);
@@ -225,7 +226,7 @@ public class TransClassificationTest
         IsofoxConfig config = createIsofoxConfig();
         config.Functions.clear();
         config.Functions.add(TRANSCRIPT_COUNTS);
-        FragmentAllocator bamReader = new FragmentAllocator(config, new ResultsWriter(config));
+        FragmentAllocator bamReader = new FragmentAllocator(config, ALT_SJ_COHORT_CACHE, new ResultsWriter(config));
 
         String transName1 = "TRANS01";
 
@@ -239,10 +240,10 @@ public class TransClassificationTest
         GeneReadData geneReadData = createGeneReadData(GENE_NAME_1, "1", (byte) 1, 1000, 5000);
         geneReadData.setTranscripts(Lists.newArrayList(transData1));
 
-        ReadRecord read1 = createReadRecord(1, CHR_1, 100, 200, REF_BASE_STR_1, createCigar(0, 10, 0));
-        ReadRecord read2 = createReadRecord(1, CHR_1, 1050, 1150, REF_BASE_STR_1, createCigar(0, 20, 0));
+        Read read1 = createReadRecord(1, CHR_1, 100, 200, REF_BASE_STR_1, createCigar(0, 10, 0));
+        Read read2 = createReadRecord(1, CHR_1, 1050, 1150, REF_BASE_STR_1, createCigar(0, 20, 0));
 
-        List<ReadRecord> reads = Lists.newArrayList(read1, read2);
+        List<Read> reads = Lists.newArrayList(read1, read2);
 
         GeneCollection geneSet = new GeneCollection(0, Lists.newArrayList(geneReadData));
         bamReader.processReadRecords(geneSet, reads);

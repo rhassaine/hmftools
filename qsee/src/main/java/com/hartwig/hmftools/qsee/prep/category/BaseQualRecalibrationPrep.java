@@ -2,9 +2,7 @@ package com.hartwig.hmftools.qsee.prep.category;
 
 import static com.hartwig.hmftools.common.codon.Nucleotides.reverseComplementBases;
 import static com.hartwig.hmftools.common.codon.Nucleotides.swapDnaBase;
-import static com.hartwig.hmftools.common.sage.SageCommon.SAGE_FILE_ID;
 
-import java.io.File;
 import java.nio.file.NoSuchFileException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -17,18 +15,22 @@ import com.hartwig.hmftools.common.redux.BqrFile;
 import com.hartwig.hmftools.common.redux.BqrKey;
 import com.hartwig.hmftools.common.redux.BqrRecord;
 
+import com.hartwig.hmftools.qsee.common.SampleType;
 import com.hartwig.hmftools.qsee.feature.FeatureKey;
 import com.hartwig.hmftools.qsee.feature.FeatureType;
 import com.hartwig.hmftools.qsee.feature.Feature;
+import com.hartwig.hmftools.qsee.common.MultiFieldStringBuilder;
 import com.hartwig.hmftools.qsee.feature.SourceTool;
 import com.hartwig.hmftools.qsee.prep.CategoryPrep;
-import com.hartwig.hmftools.qsee.prep.CommonPrepConfig;
-import com.hartwig.hmftools.qsee.prep.bqr.BaseQualBin;
-import com.hartwig.hmftools.qsee.prep.bqr.BaseQualBinner;
+import com.hartwig.hmftools.qsee.prep.QseePrepConfig;
+import com.hartwig.hmftools.qsee.prep.category.bqr.BaseQualBin;
+import com.hartwig.hmftools.qsee.prep.category.bqr.BaseQualBinner;
+
+import org.apache.commons.math3.stat.descriptive.moment.Mean;
 
 public class BaseQualRecalibrationPrep implements CategoryPrep
 {
-    private final CommonPrepConfig mConfig;
+    private final QseePrepConfig mConfig;
     private final BaseQualBinner mBaseQualBinner;
 
     private static final SourceTool SOURCE_TOOL = SourceTool.REDUX;
@@ -46,30 +48,15 @@ public class BaseQualRecalibrationPrep implements CategoryPrep
      */
     private static final int PSEUDOCOUNT = 5;
 
-    public BaseQualRecalibrationPrep(CommonPrepConfig config)
+    public BaseQualRecalibrationPrep(QseePrepConfig config)
     {
         mConfig = config;
-        mBaseQualBinner = new BaseQualBinner(config.SEQUENCING_TYPE);
+        mBaseQualBinner = new BaseQualBinner(config.SequencingTech);
     }
 
     public SourceTool sourceTool() { return SOURCE_TOOL; }
-
-    private String findBackwardsCompatibleBqrFile(String sampleId) throws NoSuchFileException
-    {
-        // TODO: Remove this temporary method. In WiGiTS 3.0, the (new) REDUX BQR file path will be used.
-
-        File reduxBqrFile = new File(BqrFile.generateFilename(mConfig.getReduxDir(sampleId), sampleId));
-        File sageBqrFile = new File(mConfig.getSageDir(sampleId) + File.separator + sampleId + SAGE_FILE_ID + ".bqr.tsv");
-
-        if(reduxBqrFile.isFile())
-            return reduxBqrFile.getAbsolutePath();
-
-        if(sageBqrFile.isFile())
-            return sageBqrFile.getAbsolutePath();
-
-        throw new NoSuchFileException(reduxBqrFile.getName() + " or " + sageBqrFile.getName());
-    }
-
+    public PrepCategory category() { return PrepCategory.BASE_QUAL_RECALIBRATION; }
+    
     @VisibleForTesting
     static BqrRecord standardiseBases(BqrRecord bqrRecord)
     {
@@ -99,9 +86,10 @@ public class BaseQualRecalibrationPrep implements CategoryPrep
 
     private static String formMutationString(BqrKey key) { return String.format("%c>%c", key.Ref, key.Alt); }
 
-    private List<BqrRecord> loadSnvBqrRecords(String sampleId) throws NoSuchFileException
+    private List<BqrRecord> loadSnvBqrRecords(String sampleId, SampleType sampleType)
     {
-        String filePath = findBackwardsCompatibleBqrFile(sampleId);
+        String baseDir = mConfig.getReduxDir(sampleId, sampleType);
+        String filePath = BqrFile.generateFilename(baseDir, sampleId);
 
         List<BqrRecord> records = BqrFile.read(filePath);
         List<BqrRecord> recordsFiltered = records.stream().filter(x -> x.Key.Ref != x.Key.Alt).toList();
@@ -118,7 +106,7 @@ public class BaseQualRecalibrationPrep implements CategoryPrep
     }
 
     @VisibleForTesting
-    static List<Feature> calcChangeInQualPerTrinucContext(List<BqrRecord> bqrRecords, BaseQualBinner baseQualBinner)
+    static List<Feature> aggregateChangeInQualPerTrinucContext(List<BqrRecord> bqrRecords, BaseQualBinner baseQualBinner)
     {
         byte hiQualThreshold = baseQualBinner.binRanges().get(BaseQualBin.HIGH).lowerBound();
         bqrRecords = bqrRecords.stream().filter(x -> x.Key.Quality >= hiQualThreshold).toList();
@@ -126,7 +114,7 @@ public class BaseQualRecalibrationPrep implements CategoryPrep
         Map<FeatureKey, List<BqrRecord>> bqrRecordGroups = new LinkedHashMap<>();
         for(BqrRecord bqrRecord : bqrRecords)
         {
-            String featureName = FeatureKey.formMultiFieldName(
+            String featureName = MultiFieldStringBuilder.formMultiField(
                     FIELD_READ_TYPE, bqrRecord.Key.ReadType.toString(),
                     FIELD_STANDARD_MUTATION, formMutationString(bqrRecord.Key),
                     FIELD_STANDARD_TRINUC_CONTEXT, new String(bqrRecord.Key.TrinucleotideContext),
@@ -139,17 +127,17 @@ public class BaseQualRecalibrationPrep implements CategoryPrep
             bqrRecordGroups.get(key).add(bqrRecord);
         }
 
-        List<Feature> features = calcMeanChangeInQualPerGroup(bqrRecordGroups);
+        List<Feature> features = calcWeightedMeanChangeInQualPerGroup(bqrRecordGroups);
         return features;
     }
 
     @VisibleForTesting
-    static List<Feature> calcChangeInQualPerOriginalQual(List<BqrRecord> bqrRecords, BaseQualBinner baseQualBinner)
+    static List<Feature> aggregateChangeInQualPerOriginalQual(List<BqrRecord> bqrRecords, BaseQualBinner baseQualBinner)
     {
         Map<FeatureKey, List<BqrRecord>> bqrRecordGroups = new LinkedHashMap<>();
         for(BqrRecord bqrRecord : bqrRecords)
         {
-            String featureName = FeatureKey.formMultiFieldName(
+            String featureName = MultiFieldStringBuilder.formMultiField(
                     FIELD_READ_TYPE, bqrRecord.Key.ReadType.toString(),
                     FIELD_STANDARD_MUTATION, formMutationString(bqrRecord.Key),
                     FIELD_ORIGINAL_QUAL_BIN, baseQualBinner.binRangeStringFrom(bqrRecord.Key.Quality)
@@ -161,49 +149,38 @@ public class BaseQualRecalibrationPrep implements CategoryPrep
             bqrRecordGroups.get(key).add(bqrRecord);
         }
 
-        List<Feature> features = calcMeanChangeInQualPerGroup(bqrRecordGroups);
+        List<Feature> features = calcWeightedMeanChangeInQualPerGroup(bqrRecordGroups);
         return features;
     }
 
-    private static List<Feature> calcMeanChangeInQualPerGroup(Map<FeatureKey, List<BqrRecord>> bqrRecordGroups)
+    private static List<Feature> calcWeightedMeanChangeInQualPerGroup(Map<FeatureKey, List<BqrRecord>> bqrRecordGroups)
     {
-        Map<FeatureKey, Double> meanChangeInQuals = new LinkedHashMap<>();
-        for(FeatureKey key : bqrRecordGroups.keySet())
-        {
-            List<BqrRecord> bqrRecordsInGroup = bqrRecordGroups.get(key);
-
-            double totalCountInGroup = bqrRecordsInGroup.stream().mapToDouble(x -> x.Count + PSEUDOCOUNT).sum();
-
-            double weightedMeanedChangeInQual = 0;
-            for(BqrRecord bqrRecordInGroup : bqrRecordsInGroup)
-            {
-                double changeInQual = bqrRecordInGroup.RecalibratedQuality - bqrRecordInGroup.Key.Quality;
-                double count = bqrRecordInGroup.Count + PSEUDOCOUNT;
-                double weight = count / totalCountInGroup;
-                double weightedChangeInQual = changeInQual * weight;
-
-                weightedMeanedChangeInQual += weightedChangeInQual;
-            }
-
-            meanChangeInQuals.put(key, weightedMeanedChangeInQual);
-        }
-
         List<Feature> features = new ArrayList<>();
-        for(FeatureKey key : meanChangeInQuals.keySet())
+
+        for(FeatureKey groupKey : bqrRecordGroups.keySet())
         {
-            features.add(new Feature(key, meanChangeInQuals.get(key)));
+            List<BqrRecord> bqrRecordsInGroup = bqrRecordGroups.get(groupKey);
+
+            double[] changeInQualPerRecord = bqrRecordsInGroup.stream().mapToDouble(x -> x.RecalibratedQuality - x.Key.Quality).toArray();
+            double[] variantCountPerRecord = bqrRecordsInGroup.stream().mapToDouble(x -> x.Count + PSEUDOCOUNT).toArray();
+
+            double weightedMeanChangeInQual = new Mean().evaluate(changeInQualPerRecord, variantCountPerRecord);
+
+            Feature feature = new Feature(groupKey, weightedMeanChangeInQual);
+            features.add(feature);
         }
+
         return features;
     }
 
     @Override
-    public List<Feature> extractSampleData(String sampleId) throws NoSuchFileException
+    public List<Feature> extractSampleData(String sampleId, SampleType sampleType) throws NoSuchFileException
     {
-        List<BqrRecord> bqrRecords = loadSnvBqrRecords(sampleId);
+        List<BqrRecord> bqrRecords = loadSnvBqrRecords(sampleId, sampleType);
 
         List<Feature> features = new ArrayList<>();
-        features.addAll(calcChangeInQualPerOriginalQual(bqrRecords, mBaseQualBinner));
-        features.addAll(calcChangeInQualPerTrinucContext(bqrRecords, mBaseQualBinner));
+        features.addAll(aggregateChangeInQualPerOriginalQual(bqrRecords, mBaseQualBinner));
+        features.addAll(aggregateChangeInQualPerTrinucContext(bqrRecords, mBaseQualBinner));
 
         return features;
     }

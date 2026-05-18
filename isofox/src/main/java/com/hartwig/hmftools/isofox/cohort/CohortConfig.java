@@ -11,6 +11,7 @@ import static com.hartwig.hmftools.common.utils.config.ConfigUtils.GENE_ID_FILE_
 import static com.hartwig.hmftools.common.utils.config.ConfigUtils.addLoggingOptions;
 import static com.hartwig.hmftools.common.utils.config.ConfigUtils.convertWildcardSamplePath;
 import static com.hartwig.hmftools.common.utils.config.ConfigUtils.loadGeneIdsFile;
+import static com.hartwig.hmftools.common.utils.file.FileDelimiters.CSV_DELIM;
 import static com.hartwig.hmftools.common.utils.file.FileDelimiters.ITEM_DELIM;
 import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.OUTPUT_ID;
 import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.OUTPUT_ID_DESC;
@@ -27,8 +28,6 @@ import static com.hartwig.hmftools.isofox.cohort.AnalysisType.GENE_EXPRESSION_CO
 import static com.hartwig.hmftools.isofox.cohort.AnalysisType.GENE_EXPRESSION_MATRIX;
 import static com.hartwig.hmftools.isofox.cohort.AnalysisType.TRANSCRIPT_EXPRESSION_MATRIX;
 import static com.hartwig.hmftools.isofox.cohort.AnalysisType.getIsofoxFileId;
-import static com.hartwig.hmftools.patientdb.dao.DatabaseAccess.addDatabaseCmdLineArgs;
-import static com.hartwig.hmftools.patientdb.dao.DatabaseAccess.createDatabaseAccess;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -49,8 +48,6 @@ import com.hartwig.hmftools.isofox.novel.cohort.AltSjCohortMatrix;
 import com.hartwig.hmftools.isofox.novel.cohort.RecurrentVariantFinder;
 import com.hartwig.hmftools.isofox.novel.cohort.SpliceSiteCache;
 import com.hartwig.hmftools.isofox.novel.cohort.SpliceVariantMatcher;
-import com.hartwig.hmftools.isofox.unmapped.UmrCohortAnalyser;
-import com.hartwig.hmftools.patientdb.dao.DatabaseAccess;
 
 public class CohortConfig
 {
@@ -63,6 +60,8 @@ public class CohortConfig
 
     public static final String SAMPLE_MUT_FILE = "sample_mut_file";
 
+    public static final String COHORT_DELIM = CSV_DELIM;
+
     public final String RootDataDir;
     public final String OutputDir;
     public final String OutputIdentifier;
@@ -73,8 +72,6 @@ public class CohortConfig
     public final boolean ConvertUnmatchedCancerToOther;
 
     public final List<AnalysisType> AnalysisTypes;
-
-    public final DatabaseAccess DbAccess;
 
     public final String EnsemblDataCache;
     public final RefGenomeInterface RefGenome;
@@ -136,8 +133,6 @@ public class CohortConfig
         Fusions = AnalysisTypes.contains(FUSION) ? new FusionCohortConfig(configBuilder) : null;
 
         Expression = requiresExpressionConfig(AnalysisTypes) ? new ExpressionCohortConfig(configBuilder) : null;
-
-        DbAccess = createDatabaseAccess(configBuilder);
 
         Threads = parseThreads(configBuilder);
     }
@@ -221,10 +216,7 @@ public class CohortConfig
         SpliceSiteCache.registerConfig(configBuilder);
         AltSjCohortMatrix.registerConfig(configBuilder);
         RecurrentVariantFinder.registerConfig(configBuilder);
-        UmrCohortAnalyser.registerConfig(configBuilder);
         GeneratePanelNormalisation.registerConfig(configBuilder);
-
-        addDatabaseCmdLineArgs(configBuilder, false);
 
         addOutputDir(configBuilder);
         addLoggingOptions(configBuilder);

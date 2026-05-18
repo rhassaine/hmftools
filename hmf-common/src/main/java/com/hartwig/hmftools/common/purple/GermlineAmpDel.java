@@ -15,7 +15,9 @@ import com.google.common.collect.Lists;
 
 public final class GermlineAmpDel
 {
+    private static final String INCONSISTENT_STATUS_CHANGE_MARKER = "NA";
     public final String GeneName;
+    public final String Transcript;
     public final String Chromosome;
     public final String ChromosomeBand;
     public final int RegionStart;
@@ -23,6 +25,7 @@ public final class GermlineAmpDel
     public final int DepthWindowCount;
     public final int ExonStart;
     public final int ExonEnd;
+    public final boolean IsPartial;
     public final GermlineDetectionMethod DetectionMethod;
     public final GermlineStatus NormalStatus;
     public final GermlineStatus TumorStatus;
@@ -33,12 +36,14 @@ public final class GermlineAmpDel
     public final ReportedStatus Reported;
 
     public GermlineAmpDel(
-            final String geneName, final String chromosome, final String chromosomeBand, final int regionStart, final int regionEnd,
-            final int depthWindowCount, final int exonStart, final int exonEnd, final GermlineDetectionMethod detectionMethod,
-            final GermlineStatus normalStatus, final GermlineStatus tumorStatus, final double germlineCopyNumber, final double tumorCopyNumber,
-            final String filter, final int cohortFrequency, final ReportedStatus reportedStatus)
+            final String geneName, final String transcript, final String chromosome, final String chromosomeBand, int regionStart,
+            int regionEnd, final int depthWindowCount, final int exonStart, final int exonEnd, final boolean isPartial,
+            final GermlineDetectionMethod detectionMethod, final GermlineStatus germlineStatus, final GermlineStatus tumorStatus,
+            final double germlineCopyNumber, final double tumorCopyNumber, final String filter, final int cohortFrequency,
+            final ReportedStatus reportedStatus)
     {
         GeneName = geneName;
+        Transcript = transcript;
         Chromosome = chromosome;
         ChromosomeBand = chromosomeBand;
         RegionStart = regionStart;
@@ -46,8 +51,9 @@ public final class GermlineAmpDel
         DepthWindowCount = depthWindowCount;
         ExonStart = exonStart;
         ExonEnd = exonEnd;
+        IsPartial = isPartial;
         DetectionMethod = detectionMethod;
-        NormalStatus = normalStatus;
+        NormalStatus = germlineStatus;
         TumorStatus = tumorStatus;
         TumorCopyNumber = tumorCopyNumber;
         GermlineCopyNumber = germlineCopyNumber;
@@ -84,6 +90,7 @@ public final class GermlineAmpDel
     private enum Columns
     {
         gene,
+        transcript,
         chromosome,
         chromosomeBand,
         regionStart,
@@ -91,6 +98,7 @@ public final class GermlineAmpDel
         depthWindowCount,
         exonStart,
         exonEnd,
+        isPartial,
         detectionMethod,
         germlineStatus,
         tumorStatus,
@@ -98,7 +106,7 @@ public final class GermlineAmpDel
         tumorCopyNumber,
         filter,
         cohortFrequency,
-        reportedStatus;
+        reportedStatus
     }
 
     private static String header()
@@ -113,6 +121,7 @@ public final class GermlineAmpDel
     {
         return new StringJoiner(TSV_DELIM)
                 .add(ampDel.GeneName)
+                .add(ampDel.Transcript)
                 .add(ampDel.Chromosome)
                 .add(ampDel.ChromosomeBand)
                 .add(String.valueOf(ampDel.RegionStart))
@@ -120,6 +129,7 @@ public final class GermlineAmpDel
                 .add(String.valueOf(ampDel.DepthWindowCount))
                 .add(String.valueOf(ampDel.ExonStart))
                 .add(String.valueOf(ampDel.ExonEnd))
+                .add(String.valueOf(ampDel.IsPartial))
                 .add(ampDel.DetectionMethod.toString())
                 .add(ampDel.NormalStatus.toString())
                 .add(ampDel.TumorStatus.toString())
@@ -139,9 +149,13 @@ public final class GermlineAmpDel
         List<GermlineAmpDel> ampDels = Lists.newArrayList();
 
         Integer reportedStatusIndex = fieldsIndexMap.get(Columns.reportedStatus.toString());
-        Integer reportedIndex = fieldsIndexMap.get("reported"); // for pre-v3.0
 
-        for(final String line : lines)
+        // for pre-v3.0
+        Integer reportedIndex = fieldsIndexMap.get("reported");
+        Integer transcriptIndex = fieldsIndexMap.get(Columns.transcript.toString());
+        Integer isPartialIndex = fieldsIndexMap.get(Columns.isPartial.toString());
+
+        for(String line : lines)
         {
             String[] values = line.split(TSV_DELIM, -1);
 
@@ -158,6 +172,7 @@ public final class GermlineAmpDel
 
             ampDels.add(new GermlineAmpDel(
                     values[fieldsIndexMap.get(Columns.gene.toString())],
+                    transcriptIndex != null ? values[fieldsIndexMap.get(Columns.transcript.toString())] : "",
                     values[fieldsIndexMap.get(Columns.chromosome.toString())],
                     values[fieldsIndexMap.get(Columns.chromosomeBand.toString())],
                     Integer.parseInt(values[fieldsIndexMap.get(Columns.regionStart.toString())]),
@@ -165,6 +180,7 @@ public final class GermlineAmpDel
                     Integer.parseInt(values[fieldsIndexMap.get(Columns.depthWindowCount.toString())]),
                     Integer.parseInt(values[fieldsIndexMap.get(Columns.exonStart.toString())]),
                     Integer.parseInt(values[fieldsIndexMap.get(Columns.exonEnd.toString())]),
+                    isPartialIndex != null ? Boolean.parseBoolean(values[isPartialIndex]) : false,
                     GermlineDetectionMethod.valueOf(values[fieldsIndexMap.get(Columns.detectionMethod.toString())]),
                     GermlineStatus.valueOf(values[fieldsIndexMap.get(Columns.germlineStatus.toString())]),
                     GermlineStatus.valueOf(values[fieldsIndexMap.get(Columns.tumorStatus.toString())]),

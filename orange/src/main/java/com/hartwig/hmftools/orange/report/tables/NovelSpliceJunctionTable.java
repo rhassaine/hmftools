@@ -1,23 +1,40 @@
 package com.hartwig.hmftools.orange.report.tables;
 
+import static java.lang.Math.min;
+import static java.lang.Math.round;
+import static java.lang.String.format;
+
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.COL_COHOR_FREQ;
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.COL_GENE;
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.COL_JUNCTIONS;
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.COL_JUNC_END;
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.COL_JUNC_START;
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.COL_LOCATION;
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.COL_SUPPORT;
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.COL_TYPE;
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.addEntry;
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.cellArray;
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.formatSupportField;
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.intToFloatArray;
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.zeroPrefixed;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.google.common.collect.Lists;
+import com.hartwig.hmftools.datamodel.isofox.AltSpliceJunctionType;
 import com.hartwig.hmftools.datamodel.isofox.NovelSpliceJunction;
+import com.hartwig.hmftools.datamodel.linx.LinxFusion;
 import com.hartwig.hmftools.orange.report.ReportResources;
-import com.hartwig.hmftools.orange.report.interpretation.Chromosomes;
 import com.hartwig.hmftools.orange.report.util.Cells;
 import com.hartwig.hmftools.orange.report.util.Tables;
 import com.itextpdf.layout.element.Cell;
 import com.itextpdf.layout.element.Table;
 
-import org.jetbrains.annotations.NotNull;
-
 public final class NovelSpliceJunctionTable
 {
-    @NotNull
-    public static Table build(@NotNull String title, float width, @NotNull List<NovelSpliceJunction> junctions,
-            @NotNull ReportResources reportResources)
+    public static Table build(
+            final String title, float width, final List<NovelSpliceJunction> junctions, final ReportResources reportResources)
     {
         if(junctions.isEmpty())
         {
@@ -25,36 +42,57 @@ public final class NovelSpliceJunctionTable
         }
 
         Cells cells = new Cells(reportResources);
-        Table table = Tables.createContent(width,
-                new float[] { 1, 1, 2, 2, 2, 2, 3, 1, 1 },
-                new Cell[] { cells.createHeader("Gene"), cells.createHeader("Chr."), cells.createHeader("Junc (Start)"),
-                        cells.createHeader("Junc (End)"), cells.createHeader("Type"), cells.createHeader("Depth S/E"),
-                        cells.createHeader("Region S/E"), cells.createHeader("Frag Count"),
-                        cells.createHeader("Cohort freq") });
+
+        List<Integer> widths = Lists.newArrayList();
+        List<Cell> cellEntries = Lists.newArrayList();
+
+        addEntry(cells, widths, cellEntries, 1, COL_GENE);
+        addEntry(cells, widths, cellEntries, 3, COL_JUNCTIONS);
+        addEntry(cells, widths, cellEntries, 2, COL_TYPE);
+        addEntry(cells, widths, cellEntries, 1, COL_JUNC_START);
+        addEntry(cells, widths, cellEntries, 1, COL_JUNC_END);
+        addEntry(cells, widths, cellEntries, 1, COL_SUPPORT);
+        addEntry(cells, widths, cellEntries, 1, COL_COHOR_FREQ);
+
+        Table table = Tables.createContent(width, intToFloatArray(widths), cellArray(cellEntries));
 
         for(NovelSpliceJunction junction : sort(junctions))
         {
             table.addCell(cells.createContent(junction.gene()));
-            table.addCell(cells.createContent(junction.chromosome()));
-            table.addCell(cells.createContent(String.valueOf(junction.junctionStart())));
-            table.addCell(cells.createContent(String.valueOf(junction.junctionEnd())));
+            table.addCell(cells.createContent(junctionsDisplay(junction)));
             table.addCell(cells.createContent(junction.type().toString()));
-            table.addCell(cells.createContent(junction.depthStart() + "/" + junction.depthEnd()));
-            table.addCell(cells.createContent(junction.regionStart() + "/" + junction.regionEnd()));
-            table.addCell(cells.createContent(String.valueOf(junction.fragmentCount())));
+            table.addCell(cells.createContent(String.valueOf(junction.regionStart())));
+            table.addCell(cells.createContent(String.valueOf(junction.regionEnd())));
+
+            int fragments = junction.fragmentCount();
+            int averageDepth = (int)round((junction.depthStart() + junction.depthEnd()) * 0.5);
+            table.addCell(cells.createContent(formatSupportField(fragments, averageDepth)));
+
             table.addCell(cells.createContent(String.valueOf(junction.cohortFrequency())));
         }
 
         return new Tables(reportResources).createWrapping(table, title);
     }
 
-    @NotNull
-    private static List<NovelSpliceJunction> sort(@NotNull List<NovelSpliceJunction> junctions)
+    private static String junctionsDisplay(final NovelSpliceJunction junction)
+    {
+        boolean dupType = junction.type() == AltSpliceJunctionType.CIRCULAR;
+
+        int positionStart = dupType ? junction.junctionEnd() : junction.junctionStart();
+        int positionEnd = dupType ? junction.junctionStart() : junction.junctionEnd();
+        int exonStart = dupType ? junction.exonEnd() : junction.exonStart();
+        int exonEnd = dupType ? junction.exonStart() : junction.exonEnd();
+
+        return format("Exon %d (%s:%d) - Exon %d (%s:%d)",
+                exonStart, junction.chromosome(), positionStart, exonEnd, junction.chromosome(), positionEnd);
+    }
+
+    private static List<NovelSpliceJunction> sort(final List<NovelSpliceJunction> junctions)
     {
         return junctions.stream().sorted((junction1, junction2) ->
         {
-            String locationUp1 = Chromosomes.zeroPrefixed(junction1.chromosome());
-            String locationUp2 = Chromosomes.zeroPrefixed(junction2.chromosome());
+            String locationUp1 = zeroPrefixed(junction1.chromosome());
+            String locationUp2 = zeroPrefixed(junction2.chromosome());
 
             if(locationUp1.equals(locationUp2))
             {

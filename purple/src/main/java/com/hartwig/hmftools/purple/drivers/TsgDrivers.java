@@ -7,6 +7,7 @@ import static com.hartwig.hmftools.purple.drivers.SomaticVariantDrivers.groupByI
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.hartwig.hmftools.common.driver.DriverCatalog;
@@ -48,8 +49,6 @@ public class TsgDrivers extends SomaticVariantDriverFinder
     {
         geneVariants.sort(new TsgImpactComparator());
 
-        SomaticVariant topVariant = geneVariants.get(0);
-
         Map<DriverImpact,Integer> variantCounts = groupByImpact(geneVariants);
         int missenseVariants = variantCounts.getOrDefault(DriverImpact.MISSENSE, 0);
         int nonsenseVariants = variantCounts.getOrDefault(DriverImpact.NONSENSE, 0);
@@ -60,7 +59,7 @@ public class TsgDrivers extends SomaticVariantDriverFinder
         double impactLikelihood = likelihoodMethod != LikelihoodMethod.SPLICE_REGION ? 1 : 0;
 
         final ImmutableDriverCatalog.Builder builder = ImmutableDriverCatalog.builder()
-                .chromosome(topVariant.chromosome())
+                .chromosome(geneVariants.get(0).chromosome())
                 .chromosomeBand(geneCopyNumber.ChromosomeBand)
                 .gene(geneCopyNumber.geneName())
                 .transcript(geneCopyNumber.TransName)
@@ -89,58 +88,61 @@ public class TsgDrivers extends SomaticVariantDriverFinder
             return builder.likelihoodMethod(LikelihoodMethod.HOTSPOT).build();
         }
 
-        if(geneVariants.stream().anyMatch(x -> x.biallelic() && !DriverImpact.isMissense(x.type(), x.variantImpact().CanonicalCodingEffect)))
+        List<SomaticVariant> codingImpactVariants = geneVariants.stream()
+                .filter(x -> hasProteinImpact(getWorstReportableCodingEffect(x.variantImpact()))).collect(Collectors.toList());
+
+        if(codingImpactVariants.stream().anyMatch(x -> x.biallelic() && !DriverImpact.isMissense(x.type(), x.variantImpact().CanonicalCodingEffect)))
         {
             return builder.likelihoodMethod(LikelihoodMethod.BIALLELIC).build();
         }
 
+        SomaticVariant topVariant = codingImpactVariants.get(0);
+
         CodingEffect firstCodingEffect = getWorstReportableCodingEffect(topVariant.variantImpact());
-        final DriverImpact firstImpact = DriverImpact.select(topVariant.type(), firstCodingEffect);
-        final DndsDriverImpactLikelihood firstImpactLikelihood = dndsLikelihood.select(firstImpact);
-        final int firstVariantTypeCount = variantCount(topVariant.biallelic(), topVariant, variantTypeCounts, biallelicCounts);
+        DriverImpact firstImpact = DriverImpact.select(topVariant.type(), firstCodingEffect);
+        DndsDriverImpactLikelihood firstImpactLikelihood = dndsLikelihood.select(firstImpact);
+        int firstVariantTypeCount = variantCount(topVariant.biallelic(), topVariant, variantTypeCounts, biallelicCounts);
 
         int nonBiallelicMissenseCount = variantTypeCounts.getOrDefault(VariantType.SNP, 0);
 
-        if(geneVariants.size() == 1)
+
+        if(codingImpactVariants.size() == 1)
         {
             double singleHit = singleHit(firstVariantTypeCount, firstImpactLikelihood);
-            double substituteFirst =
-                    firstImpact != DriverImpact.MISSENSE ? singleHit(nonBiallelicMissenseCount, dndsLikelihood.missense()) : singleHit;
+            double substituteFirst = firstImpact != DriverImpact.MISSENSE ?
+                    singleHit(nonBiallelicMissenseCount, dndsLikelihood.missense()) : singleHit;
 
             return builder.driverLikelihood(Math.max(singleHit, substituteFirst)).build();
         }
 
         // handle multiple hits in the same gene
-        SomaticVariant secondVariant = geneVariants.get(1);
+        SomaticVariant secondVariant = codingImpactVariants.get(1);
 
         CodingEffect secondCodingEffect = getWorstReportableCodingEffect(secondVariant.variantImpact());
 
-        if(hasProteinImpact(secondCodingEffect))
-        {
-            DriverImpact secondImpact = DriverImpact.select(secondVariant.type(), secondCodingEffect);
+        DriverImpact secondImpact = DriverImpact.select(secondVariant.type(), secondCodingEffect);
 
-            final DndsDriverImpactLikelihood secondImpactLikelihood = dndsLikelihood.select(secondImpact);
+        DndsDriverImpactLikelihood secondImpactLikelihood = dndsLikelihood.select(secondImpact);
 
-            final int secondVariantTypeCount = variantCount(secondVariant.biallelic(), secondVariant, variantTypeCounts, biallelicCounts);
+        int secondVariantTypeCount = variantCount(secondVariant.biallelic(), secondVariant, variantTypeCounts, biallelicCounts);
 
-            double multiHit = multiHit(firstVariantTypeCount, secondVariantTypeCount, firstImpactLikelihood, secondImpactLikelihood);
+        double multiHit = multiHit(firstVariantTypeCount, secondVariantTypeCount, firstImpactLikelihood, secondImpactLikelihood);
 
-            double substituteFirst = firstImpact == DriverImpact.MISSENSE
-                    ? multiHit
-                    : multiHit(nonBiallelicMissenseCount, secondVariantTypeCount, dndsLikelihood.missense(), secondImpactLikelihood);
+        double substituteFirst = firstImpact == DriverImpact.MISSENSE
+                ? multiHit
+                : multiHit(nonBiallelicMissenseCount, secondVariantTypeCount, dndsLikelihood.missense(), secondImpactLikelihood);
 
-            double substituteSecond = secondImpact == DriverImpact.MISSENSE
-                    ? multiHit
-                    : multiHit(firstVariantTypeCount, nonBiallelicMissenseCount, firstImpactLikelihood, dndsLikelihood.missense());
+        double substituteSecond = secondImpact == DriverImpact.MISSENSE
+                ? multiHit
+                : multiHit(firstVariantTypeCount, nonBiallelicMissenseCount, firstImpactLikelihood, dndsLikelihood.missense());
 
-            double substituteBoth = firstImpact == DriverImpact.MISSENSE || secondImpact == DriverImpact.MISSENSE
-                    ? multiHit
-                    : multiHit(nonBiallelicMissenseCount, nonBiallelicMissenseCount, dndsLikelihood.missense(), dndsLikelihood.missense());
+        double substituteBoth = firstImpact == DriverImpact.MISSENSE || secondImpact == DriverImpact.MISSENSE
+                ? multiHit
+                : multiHit(nonBiallelicMissenseCount, nonBiallelicMissenseCount, dndsLikelihood.missense(), dndsLikelihood.missense());
 
-            double combinedResult = Math.max(Math.max(substituteFirst, substituteSecond), substituteBoth);
+        double combinedResult = Math.max(Math.max(substituteFirst, substituteSecond), substituteBoth);
 
-            builder.driverLikelihood(combinedResult);
-        }
+        builder.driverLikelihood(combinedResult);
 
         return builder.build();
     }

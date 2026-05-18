@@ -20,7 +20,7 @@ import com.hartwig.hmftools.isofox.IsofoxConfig;
 import com.hartwig.hmftools.isofox.common.BaseDepth;
 import com.hartwig.hmftools.isofox.common.GeneCollection;
 import com.hartwig.hmftools.isofox.common.GeneReadData;
-import com.hartwig.hmftools.isofox.common.ReadRecord;
+import com.hartwig.hmftools.isofox.common.Read;
 import com.hartwig.hmftools.isofox.common.RegionMatchType;
 import com.hartwig.hmftools.isofox.common.RegionReadData;
 import com.hartwig.hmftools.isofox.common.TransMatchType;
@@ -53,7 +53,7 @@ public class RetainedIntronFinder
 
     public final List<RetainedIntron> getRetainedIntrons() { return mRetainedIntrons; }
 
-    public void evaluateFragmentReads(final ReadRecord read1, final ReadRecord read2)
+    public void evaluateFragmentReads(final Read read1, final Read read2)
     {
         if(!mEnabled)
             return;
@@ -74,7 +74,7 @@ public class RetainedIntronFinder
 
         for (int i = 0; i <= 1; ++i)
         {
-            ReadRecord read = (i == 0) ? read1 : read2;
+            Read read = (i == 0) ? read1 : read2;
 
             if(read.containsSplit())
             {
@@ -135,7 +135,7 @@ public class RetainedIntronFinder
         }
     }
 
-    private RetainedIntron evaluateRead(ReadRecord read)
+    private RetainedIntron evaluateRead(Read read)
     {
         int spannedPosition = 0;
         boolean spannedIsStart = false;
@@ -261,13 +261,13 @@ public class RetainedIntronFinder
                         continue;
 
                     writer.write(String.format("%s,%s,%s,%d",
-                            gene.GeneData.GeneId, gene.GeneData.GeneName,
-                            gene.GeneData.Chromosome, gene.GeneData.Strand));
+                            gene.Gene.GeneId, gene.Gene.GeneName,
+                            gene.Gene.Chromosome, gene.Gene.Strand));
 
                     int readDepth = max(retIntron.getDepth(), retIntron.getFragmentCount());
 
                     writer.write(String.format(",%d,%s,%d,%d,%d,%s",
-                            retIntron.position(), retIntron.type(gene.GeneData.forwardStrand()), retIntron.getFragmentCount(),
+                            retIntron.position(), retIntron.type(gene.Gene.forwardStrand()), retIntron.getFragmentCount(),
                             retIntron.getSplicedFragmentCount(), readDepth, retIntron.transcriptInfo()));
 
                     writer.newLine();

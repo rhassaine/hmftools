@@ -6,31 +6,32 @@ import static com.hartwig.hmftools.qsee.common.QseeConstants.QC_LOGGER;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.hartwig.hmftools.common.utils.config.ConfigBuilder;
 
 import com.hartwig.hmftools.qsee.common.QseeFileCommon;
 import com.hartwig.hmftools.qsee.common.SampleType;
+import com.hartwig.hmftools.qsee.feature.Feature;
 import com.hartwig.hmftools.qsee.feature.FeatureKey;
 import com.hartwig.hmftools.qsee.prep.CategoryPrep;
-import com.hartwig.hmftools.qsee.prep.CommonPrepConfig;
 import com.hartwig.hmftools.qsee.prep.FeaturePrep;
+import com.hartwig.hmftools.qsee.prep.QseePrepConfig;
 
 public class CohortPercentilesTrainer
 {
     private final TrainConfig mTrainConfig;
-    private final CommonPrepConfig mCommonPrepConfig;
+    private final QseePrepConfig mPrepConfig;
 
     private final double[] mPercentiles;
 
     public CohortPercentilesTrainer(final TrainConfig trainConfig)
     {
         mTrainConfig = trainConfig;
-        mCommonPrepConfig = trainConfig.CommonPrep;
+        mPrepConfig = trainConfig.Prep;
 
         mPercentiles = createTransformer().getPercentiles();
     }
@@ -44,28 +45,17 @@ public class CohortPercentilesTrainer
 
     private List<FeaturePercentiles> calcPercentiles(FeatureMatrix sampleFeatureMatrix, SampleType sampleType)
     {
-        List<String> percentileNames = CohortPercentilesFile.getPercentileNames(mPercentiles);
-        FeatureMatrix percentileFeatureMatrix = new FeatureMatrix(new HashMap<>(), percentileNames);
-
-        for(int featureIndex = 0; featureIndex < sampleFeatureMatrix.numFeatures(); ++featureIndex)
-        {
-            PercentileTransformer transformer = createTransformer();
-
-            double[] featureValues = sampleFeatureMatrix.getColumnValues(featureIndex);
-            FeatureKey featureKey = sampleFeatureMatrix.getFeatureKeys().get(featureIndex);
-
-            transformer.fit(featureValues, featureKey);
-            percentileFeatureMatrix.addColumn(featureKey, transformer.getRefValues(), featureKey.sourceTool());
-        }
-
-        percentileFeatureMatrix.sortFeatureKeys();
-
         List<FeaturePercentiles> cohortPercentiles = new ArrayList<>();
-        for(FeatureKey key : percentileFeatureMatrix.getFeatureKeys())
+        for(FeatureKey featureKey : sampleFeatureMatrix.getFeatureKeys())
         {
-            FeaturePercentiles featurePercentiles = new FeaturePercentiles(
-                    sampleType, key, mPercentiles, percentileFeatureMatrix.getColumnValues(key));
+            Feature[] featuresAcrossSamples = sampleFeatureMatrix.getColumn(featureKey);
+            double[] featureValuesAcrossSamples = Stream.of(featuresAcrossSamples).mapToDouble(Feature::value).toArray();
 
+            PercentileTransformer transformer = createTransformer();
+            transformer.fit(featureValuesAcrossSamples, featureKey);
+
+            double[] refValues = transformer.getRefValues();
+            FeaturePercentiles featurePercentiles = new FeaturePercentiles(sampleType, featureKey, mPercentiles, refValues);
             cohortPercentiles.add(featurePercentiles);
         }
 
@@ -74,38 +64,38 @@ public class CohortPercentilesTrainer
 
     private List<FeaturePercentiles> runFor(SampleType sampleType)
     {
-        List<String> sampleIds = mCommonPrepConfig.getSampleIds(sampleType);
+        List<String> sampleIds = mPrepConfig.getSampleIds(sampleType);
         if(sampleIds.isEmpty())
         {
             QC_LOGGER.info("Skipping sampleType({}) as no samples provided", sampleType.name());
             return new ArrayList<>();
         }
 
-        List<CategoryPrep> categoryPreps = FeaturePrep.createCategoryPreps(mCommonPrepConfig);
+        List<CategoryPrep> categoryPreps = FeaturePrep.createCategoryPreps(mPrepConfig);
         List<FeaturePercentiles> cohortPercentiles = new ArrayList<>();
 
         boolean writeCohortFeatures = mTrainConfig.WriteCohortFeatures;
         CohortFeaturesWriter cohortFeaturesWriter = null;
         if(writeCohortFeatures)
-            cohortFeaturesWriter = new CohortFeaturesWriter(mCommonPrepConfig, sampleType);
+            cohortFeaturesWriter = new CohortFeaturesWriter(mPrepConfig, sampleType);
 
         for(CategoryPrep categoryPrep : categoryPreps)
         {
-            QC_LOGGER.info("Extracting cohort features - sampleType({}) category({})", sampleType, categoryPrep.name());
-            FeaturePrep featurePrep = new FeaturePrep(mCommonPrepConfig);
+            QC_LOGGER.info("Extracting cohort features - sampleType({}) category({})", sampleType, categoryPrep.category());
+            FeaturePrep featurePrep = new FeaturePrep(mPrepConfig);
 
             FeatureMatrix sampleFeatureMatrix = new FeatureMatrix(new ConcurrentHashMap<>(), sampleIds);
-            featurePrep.prepCohortCategory(categoryPrep, sampleType, sampleFeatureMatrix);
+            featurePrep.prepCohortCategory(categoryPrep, sampleType, sampleFeatureMatrix, true);
 
             sampleFeatureMatrix.sortFeatureKeys();
 
             if(writeCohortFeatures)
             {
-                QC_LOGGER.info("Writing cohort features - sampleType({}) category({})", sampleType, categoryPrep.name());
+                QC_LOGGER.info("Writing cohort features - sampleType({}) category({})", sampleType, categoryPrep.category());
                 cohortFeaturesWriter.writeCategory(sampleFeatureMatrix);
             }
 
-            QC_LOGGER.info("Calculating percentiles - sampleType({}) category({})", sampleType, categoryPrep.name());
+            QC_LOGGER.info("Calculating percentiles - sampleType({}) category({})", sampleType, categoryPrep.category());
             List<FeaturePercentiles> categoryPercentiles = calcPercentiles(sampleFeatureMatrix, sampleType);
 
             cohortPercentiles.addAll(categoryPercentiles);
@@ -131,7 +121,7 @@ public class CohortPercentilesTrainer
 
         try
         {
-            String outputFile = CohortPercentilesFile.generateFilename(mCommonPrepConfig.OutputDir);
+            String outputFile = CohortPercentilesFile.generateFilename(mPrepConfig.OutputDir, mPrepConfig.OutputId);
             QC_LOGGER.info("Writing cohort percentiles file: {}", outputFile);
             CohortPercentilesFile.write(outputFile, mPercentiles, cohortPercentiles);
         }

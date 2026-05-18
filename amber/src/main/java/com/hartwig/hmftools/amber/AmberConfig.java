@@ -12,6 +12,10 @@ import static com.hartwig.hmftools.common.region.SpecificRegions.loadSpecificChr
 import static com.hartwig.hmftools.common.bam.BamUtils.addValidationStringencyOption;
 import static com.hartwig.hmftools.common.perf.TaskExecutor.addThreadOptions;
 import static com.hartwig.hmftools.common.perf.TaskExecutor.parseThreads;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.BLACKLISTED_SITES;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.BLACKLISTED_SITES_DESC;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.PERF_DEBUG;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.PERF_DEBUG_DESC;
 import static com.hartwig.hmftools.common.utils.config.CommonConfig.REFERENCE;
 import static com.hartwig.hmftools.common.utils.config.CommonConfig.REFERENCE_BAM;
 import static com.hartwig.hmftools.common.utils.config.CommonConfig.REFERENCE_BAM_DESC;
@@ -50,6 +54,7 @@ public class AmberConfig
 
     public final String BafLociPath;
     public final String TargetRegionsBed;
+    public final String BlacklistedSitesPath;
     public final RefGenomeVersion RefGenVersion;
     public final String RefGenomeFile;
 
@@ -63,13 +68,14 @@ public class AmberConfig
     public final double MinHetAfPercent;
     public final double MaxHetAfPercent;
     public final boolean WriteUnfilteredGermline;
+    public final boolean WriteTumorData;
     public final int PositionGap;
 
     public final String OutputDir;
     public final ValidationStringency BamStringency;
     public final int Threads;
     public final boolean SkipBafSegmentation;
-    public final boolean UseOldSegmenter;
+    public final boolean PerfDebug;
 
     public final List<String> SpecificChromosomes;
 
@@ -88,6 +94,7 @@ public class AmberConfig
     private static final String MIN_HIT_AT_PERC = "min_het_af_percent";
     private static final String MAX_HIT_AT_PERC = "max_het_af_percent";
     private static final String WRITE_UNFILTERED_GERMLINE = "write_unfiltered_germline";
+    private static final String WRITE_TUMOR_DATA = "write_tumor_data";
     private static final String POSITION_GAP = "position_gap";
     private static final String SKIP_BAF_SEGMENTATION = "skip_baf_segmentation";
     public static final String USE_OLD_SEGMENTER = "use_old_segmenter";
@@ -107,7 +114,8 @@ public class AmberConfig
         }
 
         BafLociPath = configBuilder.getValue(LOCI_FILE);
-        TargetRegionsBed  = configBuilder.getValue(TARGET_REGIONS_BED);
+        TargetRegionsBed = configBuilder.getValue(TARGET_REGIONS_BED);
+        BlacklistedSitesPath = configBuilder.getValue(BLACKLISTED_SITES);
 
         RefGenVersion = RefGenomeVersion.from(configBuilder);
         RefGenomeFile = configBuilder.getValue(REF_GENOME);
@@ -116,11 +124,17 @@ public class AmberConfig
         TumorOnlyMinVaf = configBuilder.getDecimal(TUMOR_ONLY_MIN_VAF);
 
         if(configBuilder.hasValue(TUMOR_MIN_DEPTH))
+        {
             TumorMinDepth = configBuilder.getInteger(TUMOR_MIN_DEPTH);
+        }
         else if(ReferenceIds.isEmpty())
+        {
             TumorMinDepth = DEFAULT_TUMOR_ONLY_MIN_DEPTH;
+        }
         else
+        {
             TumorMinDepth = DEFAULT_TUMOR_MIN_DEPTH;
+        }
 
         MinBaseQuality = configBuilder.getInteger(MIN_BASE_QUALITY);
         MinMappingQuality = configBuilder.getInteger(MIN_MAP_QUALITY);
@@ -142,9 +156,10 @@ public class AmberConfig
         PositionGap = configBuilder.getInteger(POSITION_GAP);
 
         SkipBafSegmentation = configBuilder.hasFlag(SKIP_BAF_SEGMENTATION);
-        UseOldSegmenter = configBuilder.hasFlag(USE_OLD_SEGMENTER);
+        PerfDebug = configBuilder.hasFlag(PERF_DEBUG);
 
         WriteUnfilteredGermline = configBuilder.hasFlag(WRITE_UNFILTERED_GERMLINE);
+        WriteTumorData = configBuilder.hasFlag(WRITE_TUMOR_DATA);
 
         OutputDir = parseOutputDir(configBuilder);
         Threads = parseThreads(configBuilder);
@@ -168,6 +183,7 @@ public class AmberConfig
 
         configBuilder.addPath(LOCI_FILE, true, "Path to BAF loci vcf file");
         configBuilder.addPath(TARGET_REGIONS_BED, false, TARGET_REGIONS_BED_DESC);
+        configBuilder.addPath(BLACKLISTED_SITES, false, BLACKLISTED_SITES_DESC);
 
         addRefGenomeVersion(configBuilder);
         configBuilder.addPath(REF_GENOME, false, REF_GENOME_CFG_DESC + ", required when using CRAM files");
@@ -193,10 +209,11 @@ public class AmberConfig
         configBuilder.addDecimal(MIN_HIT_AT_PERC, "Max heterozygous AF%", DEFAULT_MIN_HET_AF_PERCENTAGE);
         configBuilder.addDecimal(MAX_HIT_AT_PERC, "Max heterozygous AF%", DEFAULT_MAX_HET_AF_PERCENTAGE);
 
-        configBuilder.addFlag(USE_OLD_SEGMENTER, "Use old R segmentation");
+        configBuilder.addFlag(PERF_DEBUG, PERF_DEBUG_DESC);
         configBuilder.addFlag(SKIP_BAF_SEGMENTATION, "Skip BAF segmentation");
 
         configBuilder.addFlag(WRITE_UNFILTERED_GERMLINE, "Write all (unfiltered) germline points");
+        configBuilder.addFlag(WRITE_TUMOR_DATA, "Write tumor points");
 
         addOutputDir(configBuilder);
         addThreadOptions(configBuilder);
@@ -211,7 +228,11 @@ public class AmberConfig
         return ReferenceIds.get(0);
     }
 
-    public boolean isTumorOnly() { return ReferenceBams.isEmpty() && TumorBam != null; }
+    public boolean isTumorOnly()
+    {
+        return ReferenceBams.isEmpty() && TumorBam != null;
+    }
+
     public boolean isGermlineOnly()
     {
         return !ReferenceBams.isEmpty() && TumorBam == null;
@@ -231,7 +252,7 @@ public class AmberConfig
             return false;
         }
 
-        if ((TumorId == null) != (TumorBam == null))
+        if((TumorId == null) != (TumorBam == null))
         {
             AMB_LOGGER.error("Unmatched: TumorId: {} and TumorBamPath: {}", TumorId, TumorBam);
             return false;
@@ -260,6 +281,20 @@ public class AmberConfig
                     AMB_LOGGER.error("Unable to locate reference bam {}", referenceBam);
                     return false;
                 }
+            }
+        }
+
+        if(BlacklistedSitesPath != null)
+        {
+            if(TargetRegionsBed == null)
+            {
+                AMB_LOGGER.error("Blacklist file provided but no target regions bed file");
+                return false;
+            }
+            if(!isTumorOnly())
+            {
+                AMB_LOGGER.error("Blacklist file only supported in tumor-only mode");
+                return false;
             }
         }
 

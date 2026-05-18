@@ -174,10 +174,8 @@ public class FragmentSizeCalcs implements Callable<Void>
             if(geneLength < MIN_GENE_LENGTH || geneLength > MAX_GENE_LENGTH)
                 continue;
 
-            if(mChromosome.equals(mConfig.Filters.ExcludedRegion.Chromosome)
-                    && positionsOverlap(
-                    mConfig.Filters.ExcludedRegion.start(), mConfig.Filters.ExcludedRegion.end(),
-                    mCurrentGenesRange[SE_START], mCurrentGenesRange[SE_END]))
+            if(mConfig.Filters.ExcludedRegions.stream()
+                    .anyMatch(x -> x.overlaps(mChromosome, mCurrentGenesRange[SE_START], mCurrentGenesRange[SE_END])))
             {
                 continue;
             }
@@ -185,7 +183,7 @@ public class FragmentSizeCalcs implements Callable<Void>
             if(currentGeneIndex >= nextLogCount)
             {
                 nextLogCount += 100;
-                ISF_LOGGER.debug("chromosome({}) processed {} genes, fragCount({}) totalReads({})",
+                ISF_LOGGER.trace("chromosome({}) processed {} genes, fragCount({}) totalReads({})",
                         mChromosome, currentGeneIndex, mProcessedFragments, mTotalFragmentCount);
             }
 
@@ -226,7 +224,7 @@ public class FragmentSizeCalcs implements Callable<Void>
 
             if(mProcessedFragments >= mRequiredFragCount)
             {
-                ISF_LOGGER.debug("chromosome({}) max fragment length samples reached: {}", mChromosome, mProcessedFragments);
+                ISF_LOGGER.trace("chromosome({}) max fragment length samples reached: {}", mChromosome, mProcessedFragments);
                 break;
             }
         }
@@ -403,7 +401,7 @@ public class FragmentSizeCalcs implements Callable<Void>
             }
 
             lengthFrequency.Frequency = lengthCount;
-            ISF_LOGGER.info("fragmentLength({}) frequency({})", lengthFrequency.Length, lengthCount);
+            ISF_LOGGER.debug("fragmentLength({}) frequency({})", lengthFrequency.Length, lengthCount);
         }
     }
 
@@ -476,7 +474,7 @@ public class FragmentSizeCalcs implements Callable<Void>
     {
         try
         {
-            final String outputFileName = config.formOutputFile("frag_length_by_gene.csv");
+            String outputFileName = config.formOutputFile("frag_length_by_gene.csv");
 
             BufferedWriter writer = createBufferedWriter(outputFileName, false);
 

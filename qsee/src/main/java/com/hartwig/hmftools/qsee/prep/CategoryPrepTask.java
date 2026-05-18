@@ -2,10 +2,12 @@ package com.hartwig.hmftools.qsee.prep;
 
 import static com.hartwig.hmftools.qsee.common.QseeConstants.QC_LOGGER;
 
-import java.nio.file.NoSuchFileException;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.logging.log4j.Level;
 import org.jetbrains.annotations.Nullable;
 
 import com.hartwig.hmftools.qsee.cohort.FeatureMatrix;
@@ -20,7 +22,11 @@ public class CategoryPrepTask implements Runnable
     private final int mSampleIndex;
     private final int mTotalSampleCount;
     private final SampleType mSampleType;
+
     private final boolean mAllowMissingInput;
+
+    @Nullable
+    private final AtomicInteger mSamplesMissingInputCount;
 
     private List<Feature> mOutput;
 
@@ -29,7 +35,7 @@ public class CategoryPrepTask implements Runnable
 
     public CategoryPrepTask(CategoryPrep categoryPrep,
             String sampleId, int sampleIndex, int totalSampleCount, SampleType sampleType,
-            @Nullable FeatureMatrix sampleFeatureMatrix, boolean allowMissingInput)
+            @Nullable FeatureMatrix sampleFeatureMatrix, boolean allowMissingInput, @Nullable AtomicInteger samplesMissingInputCount)
     {
         mCategoryPrep = categoryPrep;
         mSampleId = sampleId;
@@ -38,6 +44,7 @@ public class CategoryPrepTask implements Runnable
         mSampleType = sampleType;
         mSampleFeatureMatrix = sampleFeatureMatrix;
         mAllowMissingInput = allowMissingInput;
+        mSamplesMissingInputCount = samplesMissingInputCount;
     }
 
     public CategoryPrepTask(CategoryPrep categoryPrep, String sampleId, SampleType sampleType, boolean allowMissingInput)
@@ -49,6 +56,7 @@ public class CategoryPrepTask implements Runnable
         mSampleType = sampleType;
         mSampleFeatureMatrix = null;
         mAllowMissingInput = allowMissingInput;
+        mSamplesMissingInputCount = null;
     }
 
     private void logProgress()
@@ -56,28 +64,30 @@ public class CategoryPrepTask implements Runnable
         if(mTotalSampleCount == 1)
             return;
 
-        int PROGRESS_INTERVAL = 100;
+        boolean hasManySamples = mTotalSampleCount > 100;
 
-        boolean hasManySamples = mTotalSampleCount >= PROGRESS_INTERVAL * 2;
+        int progressInterval = 100;
+        if(mTotalSampleCount > 1000) progressInterval = 1000;
+        if(mTotalSampleCount > 10000) progressInterval = 10000;
 
         if(hasManySamples)
         {
-            boolean isSampleAtInterval = (mSampleIndex + 1) % PROGRESS_INTERVAL == 0;
+            boolean isSampleAtInterval = (mSampleIndex + 1) % progressInterval == 0;
             boolean isLastSample = mSampleIndex == mTotalSampleCount - 1;
 
             if(isSampleAtInterval || isLastSample)
             {
                 QC_LOGGER.debug("category({}) - Progress: {}/{} - current sample: {}",
-                        mCategoryPrep.name(), mSampleIndex + 1, mTotalSampleCount, mSampleId);
+                        mCategoryPrep.category(), mSampleIndex + 1, mTotalSampleCount, mSampleId);
             }
         }
     }
 
-    public static void missingInputFilesError(
-            boolean allowMissingInput, CategoryPrep categoryPrep, SampleType sampleType, String sampleId, String missingFilePath)
+    public static void missingInputFilesError(boolean allowMissingInput, CategoryPrep categoryPrep, SampleType sampleType, String missingFilePath)
     {
-        QC_LOGGER.error("sampleType({}) category({}) - sample({}) missing input file(s): {}",
-                sampleType, categoryPrep.name(), sampleId, missingFilePath);
+        QC_LOGGER.log(allowMissingInput ? Level.WARN : Level.ERROR,
+                "sampleType({}) category({}) - missing input file(s): {}",
+                sampleType, categoryPrep.category(), missingFilePath);
 
         if(!allowMissingInput)
             System.exit(1);
@@ -91,15 +101,19 @@ public class CategoryPrepTask implements Runnable
             logProgress();
             mOutput = mCategoryPrep.extractSampleData(mSampleId, mSampleType);
         }
-        catch(NoSuchFileException e)
+        catch(IOException e)
         {
-            missingInputFilesError(mAllowMissingInput, mCategoryPrep, mSampleType, mSampleId, e.getMessage());
+            missingInputFilesError(mAllowMissingInput, mCategoryPrep, mSampleType, e.getMessage());
+
+            if(mSamplesMissingInputCount != null)
+                mSamplesMissingInputCount.incrementAndGet();
 
             mOutput = new ArrayList<>();
         }
         catch(Exception e)
         {
-            QC_LOGGER.error("sampleType({}) category({}) - Failed to run prep for sample({})", mCategoryPrep.name(), mSampleId, e);
+            QC_LOGGER.error("sampleType({}) category({}) - Failed to run prep for sample({})", mCategoryPrep.category(), mSampleId, e);
+            e.printStackTrace();
             System.exit(1);
         }
 

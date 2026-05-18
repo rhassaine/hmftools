@@ -1,19 +1,19 @@
 package com.hartwig.hmftools.orange.algo.immuno;
 
+import static com.hartwig.hmftools.datamodel.purple.PurpleDriverType.LOH;
+
 import java.util.List;
 import java.util.Set;
 
 import com.google.common.collect.Sets;
 import com.hartwig.hmftools.datamodel.immuno.ImmuneEscapeRecord;
 import com.hartwig.hmftools.datamodel.immuno.ImmutableImmuneEscapeRecord;
-import com.hartwig.hmftools.datamodel.linx.LinxHomozygousDisruption;
+import com.hartwig.hmftools.datamodel.linx.LinxBreakend;
 import com.hartwig.hmftools.datamodel.linx.LinxRecord;
-import com.hartwig.hmftools.datamodel.purple.CopyNumberInterpretation;
-import com.hartwig.hmftools.datamodel.purple.PurpleCodingEffect;
+import com.hartwig.hmftools.datamodel.purple.PurpleDriver;
+import com.hartwig.hmftools.datamodel.purple.PurpleDriverType;
 import com.hartwig.hmftools.datamodel.purple.PurpleGainDeletion;
-import com.hartwig.hmftools.datamodel.purple.PurpleGeneCopyNumber;
 import com.hartwig.hmftools.datamodel.purple.PurpleRecord;
-import com.hartwig.hmftools.datamodel.purple.PurpleVariant;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -47,7 +47,7 @@ public final class ImmuneEscapeInterpreter
     {
         for(String geneToCheck : genesToCheck)
         {
-            if(hasLOH(purple.somaticGeneCopyNumbers(), geneToCheck))
+            if(hasLOH(purple.somaticDrivers(), geneToCheck))
             {
                 return true;
             }
@@ -56,53 +56,33 @@ public final class ImmuneEscapeInterpreter
         return false;
     }
 
-    private static boolean hasLOH(final List<PurpleGeneCopyNumber> allSomaticGeneCopyNumbers, final String geneToCheck)
+    private static final List<PurpleDriverType> DELETION_TYPES = List.of(LOH, PurpleDriverType.DEL, PurpleDriverType.HET_DEL);
+
+    private static boolean hasLOH(final List<PurpleDriver> somaticDrivers, final String geneToCheck)
     {
-        for(PurpleGeneCopyNumber somaticGeneCopyNumber : allSomaticGeneCopyNumbers)
+        for(PurpleDriver somaticDriver : somaticDrivers)
         {
-            if(somaticGeneCopyNumber.gene().equals(geneToCheck))
+            if(somaticDriver.gene().equals(geneToCheck) && DELETION_TYPES.contains(somaticDriver.type()))
             {
-                return somaticGeneCopyNumber.minCopyNumber() > 0.5  && somaticGeneCopyNumber.minMinorAlleleCopyNumber() < 0.3;
+                return true;
             }
         }
 
-        LOGGER.warn("Could not find gene copy number data for gene: {}", geneToCheck);
         return false;
     }
 
-    private static boolean anyGeneWithInactivation(final PurpleRecord purple, final LinxRecord linx,
-            final Set<String> genesToCheck)
+    private static boolean anyGeneWithInactivation(final PurpleRecord purple, final LinxRecord linx, final Set<String> genesToCheck)
     {
         for(String geneToCheck : genesToCheck)
         {
             boolean hasInactivationVariant = false; // previously checked all small variants
             boolean hasGeneDeletion = isDeleted(purple.somaticGainsDels(), geneToCheck);
-            boolean hasHomozygousDisruption = isHomozygouslyDisrupted(linx.somaticHomozygousDisruptions(), geneToCheck);
+
+            boolean hasHomozygousDisruption = isHomozygouslyDisrupted(linx.somaticBreakends(), geneToCheck);
 
             if(hasInactivationVariant || hasGeneDeletion || hasHomozygousDisruption)
             {
                 return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean hasAnyInactivationVariant(final List<PurpleVariant> allSomaticVariants, final String geneToCheck)
-    {
-        for(PurpleVariant somaticVariant : allSomaticVariants)
-        {
-            if(somaticVariant.gene().equals(geneToCheck))
-            {
-                PurpleCodingEffect canonicalCodingEffect = somaticVariant.canonicalImpact().codingEffect();
-                boolean hasLOFImpact = canonicalCodingEffect == PurpleCodingEffect.SPLICE ||
-                        canonicalCodingEffect == PurpleCodingEffect.NONSENSE_OR_FRAMESHIFT;
-                boolean hasBiallelicMissenseImpact = canonicalCodingEffect == PurpleCodingEffect.MISSENSE && somaticVariant.biallelic();
-
-                boolean isClonal = somaticVariant.subclonalLikelihood() < 0.5;
-                if(isClonal && (hasLOFImpact || hasBiallelicMissenseImpact))
-                {
-                    return true;
-                }
             }
         }
         return false;
@@ -114,8 +94,7 @@ public final class ImmuneEscapeInterpreter
         {
             if(somaticGainDel.gene().equals(geneToCheck) && somaticGainDel.isCanonical())
             {
-                return somaticGainDel.interpretation() == CopyNumberInterpretation.FULL_DEL
-                        || somaticGainDel.interpretation() == CopyNumberInterpretation.PARTIAL_DEL;
+                return somaticGainDel.driver().type() == PurpleDriverType.DEL;
             }
         }
 
@@ -123,15 +102,14 @@ public final class ImmuneEscapeInterpreter
     }
 
     private static boolean isHomozygouslyDisrupted(
-            final List<LinxHomozygousDisruption> somaticHomozygousDisruptions, final String geneToCheck)
+            final List<LinxBreakend> somaticDisruptions, final String geneToCheck)
     {
-        for(LinxHomozygousDisruption somaticHomozygousDisruption : somaticHomozygousDisruptions)
+        for(LinxBreakend disruption : somaticDisruptions)
         {
-            if(somaticHomozygousDisruption.gene().equals(geneToCheck) && somaticHomozygousDisruption.isCanonical())
-            {
+            if(disruption.gene().equals(geneToCheck) && disruption.undisruptedCopyNumber() < 0.5)
                 return true;
-            }
         }
+
         return false;
     }
 
@@ -153,7 +131,7 @@ public final class ImmuneEscapeInterpreter
         {
             if(somaticGainDel.gene().equals(geneToCheck) && somaticGainDel.isCanonical())
             {
-                return somaticGainDel.interpretation() == CopyNumberInterpretation.FULL_GAIN;
+                return somaticGainDel.driver().type() == PurpleDriverType.AMP;
             }
         }
         return false;

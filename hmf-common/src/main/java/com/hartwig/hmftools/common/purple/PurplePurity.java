@@ -108,9 +108,9 @@ public final class PurplePurity
                 Double.parseDouble(values[fieldsIndexMap.get(PurplePurityColumn.msIndelsPerMb.toString())]),
                 MicrosatelliteStatus.valueOf(values[fieldsIndexMap.get(PurplePurityColumn.msStatus.toString())]),
                 Integer.parseInt(values[fieldsIndexMap.get(PurplePurityColumn.tml.toString())]),
-                TumorMutationalStatus.valueOf(values[fieldsIndexMap.get(PurplePurityColumn.tmbStatus.toString())]),
-                Double.parseDouble(values[fieldsIndexMap.get(PurplePurityColumn.tmbPerMb.toString())]),
                 TumorMutationalStatus.valueOf(values[fieldsIndexMap.get(PurplePurityColumn.tmlStatus.toString())]),
+                Double.parseDouble(values[fieldsIndexMap.get(PurplePurityColumn.tmbPerMb.toString())]),
+                TumorMutationalStatus.valueOf(values[fieldsIndexMap.get(PurplePurityColumn.tmbStatus.toString())]),
                 Integer.parseInt(values[fieldsIndexMap.get(PurplePurityColumn.svTumorMutationalBurden.toString())]),
                 RunMode.valueOf(values[fieldsIndexMap.get(PurplePurityColumn.runMode.toString())]),
                 Boolean.parseBoolean(values[fieldsIndexMap.get(PurplePurityColumn.targeted.toString())]));
@@ -197,7 +197,7 @@ public final class PurplePurity
                 .add(FORMAT.format(purplePurity.MsIndelsPerMb))
                 .add(String.valueOf(purplePurity.MsStatus))
                 .add(String.valueOf(purplePurity.Tml))
-                .add(String.valueOf(purplePurity.TmbStatus))
+                .add(String.valueOf(purplePurity.TmlStatus))
                 .add(FORMAT.format(purplePurity.TmbPerMb))
                 .add(String.valueOf(purplePurity.TmbStatus))
                 .add(String.valueOf(purplePurity.SvTumorMutationalBurden))

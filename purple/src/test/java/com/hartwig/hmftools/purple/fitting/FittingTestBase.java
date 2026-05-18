@@ -21,7 +21,7 @@ import com.hartwig.hmftools.common.genome.chromosome.CobaltChromosomes;
 import com.hartwig.hmftools.common.genome.chromosome.HumanChromosome;
 import com.hartwig.hmftools.common.purple.FittedPurity;
 import com.hartwig.hmftools.common.purple.Gender;
-import com.hartwig.hmftools.common.purple.ImmutableFittedPurity;
+import com.hartwig.hmftools.common.redux.MsiModelPrediction;
 import com.hartwig.hmftools.common.utils.config.ConfigBuilder;
 import com.hartwig.hmftools.common.utils.pcf.PCFPosition;
 import com.hartwig.hmftools.purple.AmberData;
@@ -70,7 +70,8 @@ public class FittingTestBase
 
         mReferenceData = new ReferenceData();
 
-        mSampleData = new SampleData(REF_SAMPLE_ID, SAMPLE_ID, mAmberData, mCobaltData, mSvCache, mSomaticCache);
+        mSampleData = new SampleData(
+                REF_SAMPLE_ID, SAMPLE_ID, mAmberData, mCobaltData, mSvCache, mSomaticCache, MsiModelPrediction.INVALID_PREDICTION);
 
         buildDefaultProfile();
     }
@@ -82,10 +83,10 @@ public class FittingTestBase
         // Amber data
         mAmberData.ChromosomeBafs.put(chr1, createAmberBaf(chr1.toString(), 1000, 1.0, 0.5));
 
-        mAmberData.TumorSegments.put(chr1, new PCFPosition(TUMOR_BAF, chr1.toString(), 100000));
+        mAmberData.TumorSegments.put(chr1, List.of(new PCFPosition(TUMOR_BAF, chr1.toString(), 100000)));
 
         // Cobalt data
-        mCobaltData.TumorSegments.put(chr1, new PCFPosition(TUMOR_RATIO, chr1.toString(), 100000));
+        mCobaltData.TumorSegments.put(chr1, List.of(new PCFPosition(TUMOR_RATIO, chr1.toString(), 100000)));
 
         List<CobaltRatio> cobaltRatios = Lists.newArrayList();
         cobaltRatios.add(FittingTestUtils.createCobaltRatio(chr1, 1000, 0.5, 0.5));
@@ -97,12 +98,6 @@ public class FittingTestBase
 
     protected FittedPurity createFittedPurity(double purity, double score, double ploidy)
     {
-        return ImmutableFittedPurity.builder()
-                .purity(purity)
-                .normFactor(0.95)
-                .score(score)
-                .diploidProportion(1.0)
-                .ploidy(ploidy)
-                .somaticPenalty(0).build();
+        return new FittedPurity(purity, 0.95, ploidy, score, 1.0, 0.0);
     }
 }

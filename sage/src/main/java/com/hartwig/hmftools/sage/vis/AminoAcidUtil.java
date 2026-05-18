@@ -7,8 +7,13 @@ import static java.lang.String.format;
 import static com.hartwig.hmftools.common.codon.Codons.codonToAminoAcid;
 import static com.hartwig.hmftools.common.codon.Codons.isStopCodon;
 import static com.hartwig.hmftools.common.codon.Nucleotides.reverseComplementBases;
+import static com.hartwig.hmftools.common.gene.CodingBaseData.PHASE_1;
+import static com.hartwig.hmftools.common.gene.TranscriptUtils.calcExonicCodingPhase;
+import static com.hartwig.hmftools.common.gene.TranscriptUtils.tickPhaseForward;
+import static com.hartwig.hmftools.sage.SageCommon.SG_LOGGER;
 import static com.hartwig.hmftools.sage.vis.AminoAcidEvent.START_LOST;
 import static com.hartwig.hmftools.sage.vis.AminoAcidEvent.STOP;
+import static com.hartwig.hmftools.sage.vis.SageVisConstants.REF_BUFFER_SIZE;
 
 import java.util.ArrayDeque;
 import java.util.Collections;
@@ -30,63 +35,93 @@ public final class AminoAcidUtil
 {
     private AminoAcidUtil() {}
 
-    public static List<GeneRegionViewModel> getGeneRegions(final TranscriptData transcriptExons)
+    public static List<GeneRegionViewModel> getGeneRegions(final TranscriptData transcriptData)
     {
-        boolean posStrand = transcriptExons.posStrand();
+        boolean posStrand = transcriptData.posStrand();
+        List<ExonData> exons = transcriptData.exons();
+
         List<GeneRegionViewModel> geneRegions = Lists.newArrayList();
-        BaseRegion transcriptCodingRegion = new BaseRegion(transcriptExons.CodingStart, transcriptExons.CodingEnd);
-        List<ExonData> exons = transcriptExons.exons();
+
+        BaseRegion transCodingRegion = new BaseRegion(transcriptData.CodingStart, transcriptData.CodingEnd);
         ExonData prevExon = null;
-        int idxStart = posStrand ? 0 : exons.size() - 1;
-        int inc = posStrand ? 1 : -1;
+        int exonIndex = posStrand ? 0 : exons.size() - 1;
+        int posInc = posStrand ? 1 : -1;
         int aaPos = 1;
-        int phase = 0;
-        for(int i = idxStart; i >= 0 && i < exons.size(); i += inc)
+        int phaseIndex = 0;
+
+        Integer phase = null;
+
+        for(int i = exonIndex; i >= 0 && i < exons.size(); i += posInc)
         {
             ExonData exon = exons.get(i);
             if(prevExon != null)
             {
                 if(posStrand)
-                    geneRegions.add(new GeneRegionViewModel.IntronicRegionViewModel(new BaseRegion(prevExon.End + 1, exon.Start - 1), 0));
+                    geneRegions.add(new GeneRegionViewModel.IntronicRegionViewModel(
+                            new BaseRegion(prevExon.End + 1, exon.Start - 1), 0));
                 else
-                    geneRegions.add(new GeneRegionViewModel.IntronicRegionViewModel(new BaseRegion(exon.End + 1, prevExon.Start - 1), 0));
+                    geneRegions.add(new GeneRegionViewModel.IntronicRegionViewModel(
+                            new BaseRegion(exon.End + 1, prevExon.Start - 1), 0));
             }
 
             prevExon = exon;
 
             BaseRegion exonRegion = new BaseRegion(exon.Start, exon.End);
-            if(!transcriptCodingRegion.overlaps(exonRegion))
+            if(!transCodingRegion.overlaps(exonRegion))
             {
                 geneRegions.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(exonRegion, 0));
                 continue;
             }
 
-            int codingStart = max(transcriptCodingRegion.start(), exonRegion.start());
-            int codingEnd = min(transcriptCodingRegion.end(), exonRegion.end());
+            // add in the amino-acid info for this coding region
+            int exonCodingStart = max(transCodingRegion.start(), exonRegion.start());
+            int exonCodingEnd = min(transCodingRegion.end(), exonRegion.end());
             if(posStrand)
             {
-                if(exon.Start < codingStart)
-                    geneRegions.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(new BaseRegion(exon.Start, codingStart - 1), 0));
+                if(exon.Start < exonCodingStart)
+                    geneRegions.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(
+                            new BaseRegion(exon.Start, exonCodingStart - 1), 0));
             }
             else
             {
-                if(exon.End > codingEnd)
-                    geneRegions.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(new BaseRegion(codingEnd + 1, exon.End), 0));
+                if(exon.End > exonCodingEnd)
+                    geneRegions.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(
+                            new BaseRegion(exonCodingEnd + 1, exon.End), 0));
             }
 
-            BaseRegion codingRegion = new BaseRegion(codingStart, codingEnd);
-            int pos = posStrand ? codingStart : codingEnd;
-            while(codingRegion.containsPosition(pos))
+            int pos = posStrand ? exonCodingStart : exonCodingEnd;
+
+            if(phase == null)
             {
-                int nucLength = 3 - phase;
+                phase = calcExonicCodingPhase(exon, transCodingRegion.start(), transCodingRegion.end(), transcriptData.Strand, pos);
+
+                // tick phase forward to first amino acid if required
+                while(phase != PHASE_1)
+                {
+                    phase = tickPhaseForward(phase);
+                    pos += posInc;
+
+                    if(posStrand)
+                        ++exonCodingStart;
+                    else
+                        --exonCodingEnd;
+                }
+            }
+
+            BaseRegion exonCodingRegion = new BaseRegion(exonCodingStart, exonCodingEnd);
+            while(exonCodingRegion.containsPosition(pos))
+            {
+                int nucLength = 3 - phaseIndex;
                 int end = posStrand
-                        ? min(pos + nucLength - 1, codingRegion.end())
-                        : max(pos - nucLength + 1, codingRegion.start());
+                        ? min(pos + nucLength - 1, exonCodingRegion.end())
+                        : max(pos - nucLength + 1, exonCodingRegion.start());
                 int len = end >= pos ? end - pos + 1 : pos - end + 1;
-                phase = (len + phase) % 3;
+                // phase = (len + phaseIndex) % 3;
+                phaseIndex = tickPhaseForward(phaseIndex, len);
+
                 BaseRegion region = new BaseRegion(min(pos, end), max(pos, end));
                 geneRegions.add(new GeneRegionViewModel.AminoAcidViewModel(region, aaPos, '.', '.', 0, false));
-                if(phase == 0)
+                if(phaseIndex == 0)
                     aaPos++;
 
                 pos = posStrand ? end + 1 : end - 1;
@@ -94,13 +129,15 @@ public final class AminoAcidUtil
 
             if(posStrand)
             {
-                if(exon.End > codingEnd)
-                    geneRegions.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(new BaseRegion(codingEnd + 1, exon.End), 0));
+                if(exon.End > exonCodingEnd)
+                    geneRegions.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(
+                            new BaseRegion(exonCodingEnd + 1, exon.End), 0));
             }
             else
             {
-                if(exon.Start < codingStart)
-                    geneRegions.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(new BaseRegion(exon.Start, codingStart - 1), 0));
+                if(exon.Start < exonCodingStart)
+                    geneRegions.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(
+                            new BaseRegion(exon.Start, exonCodingStart - 1), 0));
             }
 
         }
@@ -108,8 +145,9 @@ public final class AminoAcidUtil
         return geneRegions;
     }
 
-    public static List<GeneRegionViewModel> getRefGeneRegionViewModels(final TranscriptData transcriptExons,
-            final TranscriptAminoAcids transcriptAminoAcids, final List<GeneRegionViewModel> geneRegions)
+    public static List<GeneRegionViewModel> getRefGeneRegionViewModels(
+            final TranscriptData transcriptExons, final TranscriptAminoAcids transcriptAminoAcids,
+            final List<GeneRegionViewModel> geneRegions)
     {
         List<GeneRegionViewModel> viewModels = Lists.newArrayList();
         boolean posStrand = transcriptExons.posStrand();
@@ -131,8 +169,18 @@ public final class AminoAcidUtil
             if(geneRegion instanceof GeneRegionViewModel.AminoAcidViewModel aaRegion)
             {
                 int aaPos = aaRegion.aminoAcidPos();
+
+                if(aaPos > aminoAcids.length())
+                {
+                    SG_LOGGER.warn("invalid amino-acid region({}: aaIndex={}) for transcript({}:{})",
+                            aaRegion.region(), aaRegion.aminoAcidPos(), transcriptExons.GeneId, transcriptExons.TransName);
+                    continue;
+                }
+
                 char refAcid = aminoAcids.charAt(aaPos - 1);
-                viewModels.add(new GeneRegionViewModel.AminoAcidViewModel(aaRegion.region(), aaPos, refAcid, '.', 0, aaPos == 1));
+
+                viewModels.add(new GeneRegionViewModel.AminoAcidViewModel(
+                        aaRegion.region(), aaPos, refAcid, '.', 0, aaPos == 1));
                 continue;
             }
 
@@ -145,9 +193,10 @@ public final class AminoAcidUtil
         return viewModels;
     }
 
-    public static List<GeneRegionViewModel> getAltGeneRegionViewModels(final TranscriptData transcriptExons,
-            final TranscriptAminoAcids transcriptAminoAcids, final List<GeneRegionViewModel> geneRegions,
-            final List<AminoAcidEvent> events, final BaseRegion renderRegion, final RefGenomeSource refGenome, final SageVariant variant)
+    public static List<GeneRegionViewModel> getAltGeneRegionViewModels(
+            final TranscriptData transcriptExons, final TranscriptAminoAcids transcriptAminoAcids,
+            final List<GeneRegionViewModel> geneRegions, final List<AminoAcidEvent> events, final BaseRegion renderRegion,
+            final RefGenomeSource refGenome, final SageVariant variant)
     {
         List<GeneRegionViewModel> viewModels = Lists.newArrayList();
         boolean posStrand = transcriptExons.posStrand();
@@ -236,7 +285,7 @@ public final class AminoAcidUtil
                                 break;
 
                             final int refPosStart = min(aaRegion.region().start(), variant.position() - 1);
-                            final int refPosEnd = min(renderRegion.end() + 100, refGenome.getChromosomeLength(variant.chromosome()));
+                            final int refPosEnd = min(renderRegion.end() + REF_BUFFER_SIZE, refGenome.getChromosomeLength(variant.chromosome()));
                             String refBases = refGenome.getBaseString(variant.chromosome(), refPosStart, refPosEnd);
                             int variantIdx = variant.position() - refPosStart;
                             String altBases = refBases.substring(0, variantIdx)
@@ -287,7 +336,8 @@ public final class AminoAcidUtil
                             {
                                 int pos = idx + 3;
                                 if(pos <= renderRegion.end())
-                                    viewModels.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(new BaseRegion(pos, renderRegion.end()), 0));
+                                    viewModels.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(
+                                            new BaseRegion(pos, renderRegion.end()), 0));
                             }
                         }
                         else
@@ -295,8 +345,9 @@ public final class AminoAcidUtil
                             if(aaRegion.region().end() < renderRegion.start())
                                 break;
 
-                            final int refPosStart = max(renderRegion.start() - 100, 1);
-                            final int refPosEnd = max(aaRegion.region().end(), variant.position() + 1);
+                            final int chrLength = refGenome.getChromosomeLength(variant.chromosome());
+                            final int refPosStart = max(renderRegion.start() - REF_BUFFER_SIZE, 1);
+                            final int refPosEnd = min(max(aaRegion.region().end(), variant.position() + REF_BUFFER_SIZE), chrLength);
                             String refBases = refGenome.getBaseString(variant.chromosome(), refPosStart, refPosEnd);
                             int variantIdx = variant.position() - refPosStart;
                             String altBases = refBases.substring(0, variantIdx)
@@ -352,7 +403,8 @@ public final class AminoAcidUtil
                             {
                                 int pos = refIdx - 3;
                                 if(pos >= renderRegion.start())
-                                    viewModels.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(new BaseRegion(renderRegion.start(), pos), 0));
+                                    viewModels.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(
+                                            new BaseRegion(renderRegion.start(), pos), 0));
                             }
                         }
 
@@ -380,9 +432,14 @@ public final class AminoAcidUtil
                     continue;
 
                 if(!stopCoding || altAcid == STOP)
-                    viewModels.add(new GeneRegionViewModel.AminoAcidViewModel(aaRegion.region(), aaPos, refAcid, altAcid, 0, aaPos == 1));
+                {
+                    viewModels.add(new GeneRegionViewModel.AminoAcidViewModel(
+                            aaRegion.region(), aaPos, refAcid, altAcid, 0, aaPos == 1));
+                }
                 else
+                {
                     viewModels.add(new GeneRegionViewModel.NonCodingExonicRegionViewModel(aaRegion.region(), 0));
+                }
 
                 continue;
             }

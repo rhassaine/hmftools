@@ -3,7 +3,8 @@ package com.hartwig.hmftools.isofox.novel;
 import static java.lang.Math.abs;
 import static java.lang.Math.min;
 
-import static com.hartwig.hmftools.common.rna.AltSpliceJunctionFile.ALT_SJ_FILE_ID;
+import static com.hartwig.hmftools.common.rna.NovelSpliceJunctionFile.ALT_SJ_FILE_ID;
+import static com.hartwig.hmftools.common.rna.NovelSpliceJunctionFile.ALT_SJ_UNFILTERED_FILE_ID;
 import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.createBufferedWriter;
 import static com.hartwig.hmftools.common.region.BaseRegion.positionWithin;
 import static com.hartwig.hmftools.common.region.BaseRegion.positionsOverlap;
@@ -14,6 +15,7 @@ import static com.hartwig.hmftools.common.sv.StartEndIterator.SE_PAIR;
 import static com.hartwig.hmftools.common.sv.StartEndIterator.SE_START;
 import static com.hartwig.hmftools.isofox.IsofoxConstants.MAX_NOVEL_SJ_DISTANCE;
 import static com.hartwig.hmftools.isofox.IsofoxFunction.ALT_SPLICE_JUNCTIONS;
+import static com.hartwig.hmftools.isofox.common.Read.clippedSide;
 import static com.hartwig.hmftools.isofox.common.RegionMatchType.EXON_BOUNDARY;
 import static com.hartwig.hmftools.common.rna.AltSpliceJunctionContext.EXONIC;
 import static com.hartwig.hmftools.common.rna.AltSpliceJunctionContext.SPLICE_JUNC;
@@ -31,23 +33,27 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.google.common.collect.Lists;
+import com.hartwig.hmftools.common.fusion.KnownFusionData;
+import com.hartwig.hmftools.common.fusion.KnownFusionType;
+import com.hartwig.hmftools.common.gene.GeneData;
 import com.hartwig.hmftools.common.gene.TranscriptData;
 import com.hartwig.hmftools.common.rna.AltSpliceJunctionContext;
 import com.hartwig.hmftools.common.rna.AltSpliceJunctionType;
 import com.hartwig.hmftools.common.bam.ClippedSide;
+import com.hartwig.hmftools.common.rna.NovelSpliceJunction;
+import com.hartwig.hmftools.common.rna.NovelSpliceJunctionFile;
 import com.hartwig.hmftools.isofox.IsofoxConfig;
 import com.hartwig.hmftools.isofox.common.BaseDepth;
 import com.hartwig.hmftools.isofox.common.GeneCollection;
 import com.hartwig.hmftools.isofox.common.GeneReadData;
-import com.hartwig.hmftools.isofox.common.ReadRecord;
+import com.hartwig.hmftools.isofox.common.Read;
 import com.hartwig.hmftools.isofox.common.RegionMatchType;
 import com.hartwig.hmftools.isofox.common.RegionReadData;
 import com.hartwig.hmftools.isofox.common.TransMatchType;
-
-import htsjdk.samtools.CigarOperator;
 
 public class AltSpliceJunctionFinder
 {
@@ -55,17 +61,32 @@ public class AltSpliceJunctionFinder
     private final IsofoxConfig mConfig;
 
     private final List<AltSpliceJunction> mAltSpliceJunctions;
-    private final BufferedWriter mWriter;
+
+    private final BufferedWriter mUnfilteredWriter;
+    private final BufferedWriter mPassWriter;
 
     private GeneCollection mGenes;
+    private final AltSjCohortCache mAltSjCohortCache;
+    private final Set<String> mReportableGenes;
+    private final Set<String> mKnownExonDelDupGenes;
 
-    public AltSpliceJunctionFinder(final IsofoxConfig config, final BufferedWriter writer)
+    public AltSpliceJunctionFinder(
+            final IsofoxConfig config, final AltSjCohortCache altSjCohortCache,
+            final BufferedWriter unfilteredWriter, final BufferedWriter passWriter)
     {
         mEnabled = config.runFunction(ALT_SPLICE_JUNCTIONS);
+        mAltSjCohortCache = altSjCohortCache;
         mConfig = config;
         mAltSpliceJunctions = Lists.newArrayList();
-        mWriter = writer;
+        mUnfilteredWriter = unfilteredWriter;
+        mPassWriter = passWriter;
         mGenes = null;
+
+        mReportableGenes = config.DriverGenes.values().stream()
+                .filter(x -> x.reportNovelSpliceJunction()).map(x -> x.gene()).collect(Collectors.toSet());
+
+        mKnownExonDelDupGenes = config.Fusions.KnownFusions.getDataByType(KnownFusionType.EXON_DEL_DUP).stream()
+                .map(x -> x.FiveGene).collect(Collectors.toSet());
     }
 
     public boolean enabled() { return mEnabled; }
@@ -78,7 +99,7 @@ public class AltSpliceJunctionFinder
     }
 
     public void evaluateFragmentReads(
-            final List<GeneReadData> genes, final ReadRecord read1, final ReadRecord read2, final List<Integer> relatedTransIds)
+            final List<GeneReadData> genes, final Read read1, final Read read2, final List<Integer> relatedTransIds)
     {
         if(!mEnabled)
             return;
@@ -88,8 +109,8 @@ public class AltSpliceJunctionFinder
 
         // exclude SJs too far outside known transcripts
         int[] geneBounds = new int[] {
-                genes.stream().mapToInt(x -> x.GeneData.GeneStart).min().orElse(0) - MAX_NOVEL_SJ_DISTANCE,
-                genes.stream().mapToInt(x -> x.GeneData.GeneStart).max().orElse(0) + MAX_NOVEL_SJ_DISTANCE };
+                genes.stream().mapToInt(x -> x.Gene.GeneStart).min().orElse(0) - MAX_NOVEL_SJ_DISTANCE,
+                genes.stream().mapToInt(x -> x.Gene.GeneStart).max().orElse(0) + MAX_NOVEL_SJ_DISTANCE };
 
         if(!positionsWithin(read1.PosStart, read1.PosEnd, geneBounds[SE_START], geneBounds[SE_END])
         || !positionsWithin(read2.PosStart, read2.PosEnd, geneBounds[SE_START], geneBounds[SE_END]))
@@ -99,8 +120,8 @@ public class AltSpliceJunctionFinder
 
         // at least one of the reads must fall within a gene
         final List<GeneReadData> candidateGenes = genes.stream()
-                .filter(x -> positionsWithin(read1.PosStart, read1.PosEnd, x.GeneData.GeneStart,x.GeneData.GeneEnd)
-                        || positionsWithin(read2.PosStart, read2.PosEnd, x.GeneData.GeneStart,x.GeneData.GeneEnd))
+                .filter(x -> positionsWithin(read1.PosStart, read1.PosEnd, x.Gene.GeneStart,x.Gene.GeneEnd)
+                        || positionsWithin(read2.PosStart, read2.PosEnd, x.Gene.GeneStart,x.Gene.GeneEnd))
                 .collect(Collectors.toList());
 
         if(candidateGenes.isEmpty())
@@ -140,9 +161,9 @@ public class AltSpliceJunctionFinder
         }
     }
 
-    private static boolean isCandidate(final ReadRecord read)
+    private static boolean isCandidate(final Read read)
     {
-        if(!read.Cigar.containsOperator(CigarOperator.N))
+        if(!read.containsSplit())
             return false;
 
         if(read.getTranscriptClassifications().values().contains(TransMatchType.SPLICE_JUNCTION))
@@ -154,7 +175,7 @@ public class AltSpliceJunctionFinder
         return true;
     }
 
-    private static boolean isCandidateCircular(final ReadRecord read1, final ReadRecord read2)
+    private static boolean isCandidateCircular(final Read read1, final Read read2)
     {
         return read1.hasSuppAlignment() && read2.hasSuppAlignment();
     }
@@ -163,14 +184,14 @@ public class AltSpliceJunctionFinder
     {
         for(GeneReadData gene : genes)
         {
-            for (TranscriptData transData : gene.getTranscripts())
+            for(TranscriptData transData : gene.getTranscripts())
             {
-                if (!transIds.contains(transData.TransId))
+                if(!transIds.contains(transData.TransId))
                     continue;
 
-                for (int i = 0; i < transData.exons().size() - 1; ++i)
+                for(int i = 0; i < transData.exons().size() - 1; ++i)
                 {
-                    if (transData.exons().get(i).End == spliceJunction[SE_START]
+                    if(transData.exons().get(i).End == spliceJunction[SE_START]
                     && transData.exons().get(i + 1).Start == spliceJunction[SE_END])
                         return true;
                 }
@@ -180,7 +201,7 @@ public class AltSpliceJunctionFinder
         return false;
     }
 
-    public AltSpliceJunction createFromRead(final ReadRecord read, final List<Integer> relatedTransIds)
+    public AltSpliceJunction createFromRead(final Read read, final List<Integer> relatedTransIds)
     {
         // related transcripts will any of those where either read covers one or more of its exons
         int[] spliceJunction = new int[SE_PAIR];
@@ -283,7 +304,7 @@ public class AltSpliceJunctionFinder
         spliceJunction[SE_END] -= minDistance;
     }
 
-    public AltSpliceJunction createFromReads(final ReadRecord read1, final ReadRecord read2, final List<Integer> relatedTransIds)
+    public AltSpliceJunction createFromReads(final Read read1, final Read read2, final List<Integer> relatedTransIds)
     {
         // related transcripts will any of those where either read covers one or more of its exons
         int[] spliceJunction = new int[SE_PAIR];
@@ -294,10 +315,10 @@ public class AltSpliceJunctionFinder
 
         for(int i = 0; i <= 1; ++i)
         {
-            final ReadRecord read = (i == 0) ? read1 : read2;
+            final Read read = (i == 0) ? read1 : read2;
 
             // take the longer of the 2 soft-clippings
-            ClippedSide clippedSide = ClippedSide.from(read.Cigar, read.isSoftClipped(SE_START), read.isSoftClipped(SE_END));
+            ClippedSide clippedSide = clippedSide(read);
 
             boolean useLeft = clippedSide != null && clippedSide.isLeft();
 
@@ -320,7 +341,7 @@ public class AltSpliceJunctionFinder
 
         if(spliceJunction[SE_START] < spliceJunction[SE_END])
         {
-            // flip the SJ around since a DUP/circular has opposite orientations to a standard alt-SJ DL
+            // flip the SJ around since a DUP/circular has opposite orientations to a standard alt-SJ DEL
             int[] flippedSpliceJunction = { spliceJunction[SE_END], spliceJunction[SE_START] };
             final AltSpliceJunctionContext[] flippedRegionContexts = { AltSpliceJunctionContext.UNKNOWN, AltSpliceJunctionContext.UNKNOWN };
 
@@ -339,7 +360,7 @@ public class AltSpliceJunctionFinder
             spliceJunction[SE_END] = spliceJunction[SE_START];
             spliceJunction[SE_START] = pos;
 
-            final AltSpliceJunctionContext[] regionContexts = { AltSpliceJunctionContext.UNKNOWN, AltSpliceJunctionContext.UNKNOWN};
+            AltSpliceJunctionContext[] regionContexts = { AltSpliceJunctionContext.UNKNOWN, AltSpliceJunctionContext.UNKNOWN};
 
             classifyRegions(read1, spliceJunction, sjEndRegions, sjStartRegions, regionContexts);
             classifyRegions(read2, spliceJunction, sjEndRegions, sjStartRegions, regionContexts);
@@ -356,13 +377,13 @@ public class AltSpliceJunctionFinder
     }
 
     private void classifyRegions(
-            final ReadRecord read, final int[] spliceJunction,
+            final Read read, final int[] spliceJunction,
             final List<RegionReadData> sjStartRegions, final List<RegionReadData> sjEndRegions, final AltSpliceJunctionContext[] regionContexts)
     {
         // collect up all exon regions matching the observed novel splice junction
         final List<Integer> sjMatchedTransIds = Lists.newArrayList();
 
-        for (Map.Entry<RegionReadData, RegionMatchType> entry : read.getMappedRegions().entrySet())
+        for(Map.Entry<RegionReadData, RegionMatchType> entry : read.getMappedRegions().entrySet())
         {
             final RegionReadData region = entry.getKey();
             RegionMatchType matchType = entry.getValue();
@@ -370,7 +391,7 @@ public class AltSpliceJunctionFinder
             if(matchType == RegionMatchType.NONE)
                 continue;
 
-            if (region.end() == spliceJunction[SE_START])
+            if(region.end() == spliceJunction[SE_START])
             {
                 // the region cannot only be from a transcript ending here
                 if(region.getPostRegions().isEmpty())
@@ -381,7 +402,7 @@ public class AltSpliceJunctionFinder
                 region.getTransExonRefs().forEach(x -> sjMatchedTransIds.add(x.TransId));
             }
 
-            if (region.start() == spliceJunction[SE_END])
+            if(region.start() == spliceJunction[SE_END])
             {
                 if(region.getPreRegions().isEmpty())
                     continue;
@@ -398,12 +419,12 @@ public class AltSpliceJunctionFinder
             if(regionContexts[se] == SPLICE_JUNC)
                 continue;
 
-            for (Map.Entry<RegionReadData, RegionMatchType> entry : read.getMappedRegions().entrySet())
+            for(Map.Entry<RegionReadData, RegionMatchType> entry : read.getMappedRegions().entrySet())
             {
                 final RegionReadData region = entry.getKey();
                 RegionMatchType matchType = entry.getValue();
 
-                if (matchType == RegionMatchType.NONE)
+                if(matchType == RegionMatchType.NONE)
                     continue;
 
                 if(!sjMatchedTransIds.isEmpty() && !region.getTransExonRefs().stream().anyMatch(x -> sjMatchedTransIds.contains(x.TransId)))
@@ -496,11 +517,11 @@ public class AltSpliceJunctionFinder
             return;
         }
 
-        final List<RegionReadData> regions1 = Lists.newArrayList(firstAltSJ.getSjStartRegions());
-        regions1.addAll(firstAltSJ.getSjEndRegions());
+        final List<RegionReadData> regions1 = Lists.newArrayList(firstAltSJ.sjStartRegions());
+        regions1.addAll(firstAltSJ.sjEndRegions());
 
-        final List<RegionReadData> regions2 = Lists.newArrayList(secondAltSJ.getSjStartRegions());
-        regions2.addAll(secondAltSJ.getSjEndRegions());
+        final List<RegionReadData> regions2 = Lists.newArrayList(secondAltSJ.sjStartRegions());
+        regions2.addAll(secondAltSJ.sjEndRegions());
 
         List<Integer> commonTranscripts = Lists.newArrayList();
 
@@ -514,7 +535,7 @@ public class AltSpliceJunctionFinder
                 {
                     List<Integer> transIds2 = region2.getTransExonRefs().stream().map(x -> x.TransId).collect(Collectors.toList());
 
-                    if (transIds2.contains(transId1))
+                    if(transIds2.contains(transId1))
                     {
                         if(!commonTranscripts.contains(transId1))
                             commonTranscripts.add(transId1);
@@ -537,7 +558,7 @@ public class AltSpliceJunctionFinder
     }
 
     private AltSpliceJunction registerAltSpliceJunction(
-            final List<GeneReadData> candidateGenes, final ReadRecord read, final List<Integer> regionTranscripts)
+            final List<GeneReadData> candidateGenes, final Read read, final List<Integer> regionTranscripts)
     {
         AltSpliceJunction altSpliceJunc = createFromRead(read, regionTranscripts);
 
@@ -561,7 +582,7 @@ public class AltSpliceJunctionFinder
     }
 
     private AltSpliceJunction registerAltSpliceJunction(
-            final List<GeneReadData> candidateGenes, final ReadRecord read1, final ReadRecord read2, final List<Integer> regionTranscripts)
+            final List<GeneReadData> candidateGenes, final Read read1, final Read read2, final List<Integer> regionTranscripts)
     {
         AltSpliceJunction altSpliceJunc = createFromReads(read1, read2, regionTranscripts);
 
@@ -590,7 +611,7 @@ public class AltSpliceJunctionFinder
     {
         for(AltSpliceJunction altSJ : mAltSpliceJunctions)
         {
-            for (int se = SE_START; se <= SE_END; ++se)
+            for(int se = SE_START; se <= SE_END; ++se)
             {
                 int depth = baseDepth.depthAtBase(altSJ.SpliceJunction[se]);
                 altSJ.addPositionCount(se, depth);
@@ -615,7 +636,7 @@ public class AltSpliceJunctionFinder
 
             for(final GeneReadData gene : mGenes.genes())
             {
-                if(gene.getExonRegions().stream().anyMatch(x -> altSJ.getSjStartRegions().contains(x) || altSJ.getSjEndRegions().contains(x)))
+                if(gene.getExonRegions().stream().anyMatch(x -> altSJ.sjStartRegions().contains(x) || altSJ.sjEndRegions().contains(x)))
                 {
                     candidateGenes.add(gene);
                 }
@@ -626,7 +647,7 @@ public class AltSpliceJunctionFinder
 
             for(final GeneReadData gene : candidateGenes)
             {
-                if(spliceStrand != 0 && gene.GeneData.Strand != spliceStrand)
+                if(spliceStrand != 0 && gene.Gene.Strand != spliceStrand)
                     continue;
 
                 int transMatched = (int)gene.getTranscripts().stream().filter(x -> transIds.contains(x.TransId)).count();
@@ -640,23 +661,24 @@ public class AltSpliceJunctionFinder
 
             if(topGene != null)
             {
-                altSJ.setGeneId(topGene.GeneData.GeneId);
+                altSJ.setGeneData(topGene.Gene.GeneId, topGene.Gene.GeneName);
             }
             else
             {
-                altSJ.setGeneId(mGenes.genes().get(0).GeneData.GeneId);
+                GeneData geneData = mGenes.genes().get(0).Gene;
+                altSJ.setGeneData(geneData.GeneId, geneData.GeneName);
             }
         }
     }
 
-    public static BufferedWriter createWriter(final IsofoxConfig config)
+    public static BufferedWriter createUnfilteredWriter(final IsofoxConfig config)
     {
         try
         {
-            final String outputFileName = config.formOutputFile(ALT_SJ_FILE_ID);
+            String outputFileName = config.formOutputFile(ALT_SJ_UNFILTERED_FILE_ID);
 
             BufferedWriter writer = createBufferedWriter(outputFileName, false);
-            writer.write(AltSpliceJunction.csvHeader());
+            writer.write(AltSpliceJunction.header());
             writer.newLine();
             return writer;
         }
@@ -667,39 +689,135 @@ public class AltSpliceJunctionFinder
         }
     }
 
-    public void writeAltSpliceJunctions()
+    public static BufferedWriter createPassingWriter(final IsofoxConfig config)
     {
-        if(mWriter != null)
+        try
         {
-            for(final AltSpliceJunction altSJ : mAltSpliceJunctions)
+            String outputFileName = config.formOutputFile(ALT_SJ_FILE_ID);
+
+            BufferedWriter writer = createBufferedWriter(outputFileName, false);
+            writer.write(NovelSpliceJunctionFile.header());
+            writer.newLine();
+            return writer;
+        }
+        catch (IOException e)
+        {
+            ISF_LOGGER.error("failed to create alt splice junction writer: {}", e.toString());
+            return null;
+        }
+    }
+
+    public void finalise()
+    {
+        for(AltSpliceJunction altSJ : mAltSpliceJunctions)
+        {
+            GeneReadData gene = mGenes.genes().stream().filter(x -> x.Gene.GeneId.equals(altSJ.geneId())).findFirst().orElse(null);
+            altSJ.calcSummaryData(gene);
+
+            int cohortFrequency = 0;
+            if(mAltSjCohortCache != null)
             {
-                final GeneReadData gene = mGenes.genes().stream().filter(x -> x.GeneData.GeneId.equals(altSJ.getGeneId())).findFirst().orElse(null);
-                altSJ.calcSummaryData(gene);
+                String asjKey = AltSjCohortCache.formKey(altSJ.Chromosome, altSJ.SpliceJunction[SE_START], altSJ.SpliceJunction[SE_END]);
+                cohortFrequency = mAltSjCohortCache.getCohortFrequency(asjKey);
+
+                altSJ.setCohortFrequency(cohortFrequency);
             }
 
-            writeAltSpliceJunctions(mWriter, mAltSpliceJunctions, mGenes);
+            // if(!mReportableGenes.contains(altSJ.geneName()))
+            //    altSJ.setFilter(AltSjFilterType.NON_DRIVER);
+
+            if(!matchesKnownExonDelDup(altSJ))
+            {
+                altSJ.addFilter(AltSjFilterType.NOT_KNOWN);
+            }
+
+            // other filters?
+
+        }
+    }
+
+    private boolean matchesKnownExonDelDup(final AltSpliceJunction altSJ)
+    {
+        if(!mKnownExonDelDupGenes.contains(altSJ.geneName()))
+            return false;
+
+        if(altSJ.selectedTranscripts()[SE_START] == null || altSJ.selectedTranscripts()[SE_START] != altSJ.selectedTranscripts()[SE_END])
+            return false;
+
+        if(altSJ.selectedExons()[SE_START] < 0 || altSJ.selectedExons()[SE_END] < 0)
+            return false;
+
+        String transcript = altSJ.selectedTranscripts()[SE_START];
+        int exonUp = altSJ.selectedExons()[SE_START];
+        int exonDown = altSJ.selectedExons()[SE_END];
+
+        List<KnownFusionData> exonDelDups = mConfig.Fusions.KnownFusions.getDataByType(KnownFusionType.EXON_DEL_DUP);
+
+        for(KnownFusionData exonDelDup : exonDelDups)
+        {
+            if(!exonDelDup.specificExonsTransName().equals(transcript))
+                continue;
+
+            int[] fiveExonRange = exonDelDup.fiveGeneExonRange();
+            int[] threeExonRange = exonDelDup.threeGeneExonRange();
+            boolean isDupType = fiveExonRange[SE_START] > threeExonRange[SE_START];
+
+            if(isDupType)
+            {
+                if(altSJ.type() != CIRCULAR)
+                    continue;
+
+                // flip exons around to match how DUPs are configured
+                int tmp = exonUp;
+                exonUp = exonDown;
+                exonDown = tmp;
+            }
+            else
+            {
+                if(altSJ.type() != SKIPPED_EXONS)
+                    continue;
+            }
+
+            if(exonUp >= fiveExonRange[SE_START] && exonUp <= fiveExonRange[SE_END]
+            && exonDown >= threeExonRange[SE_START] && exonDown <= threeExonRange[SE_END])
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public void writeAltSpliceJunctions()
+    {
+        if(mUnfilteredWriter != null && mPassWriter != null)
+        {
+            writeAltSpliceJunctions(mUnfilteredWriter, mPassWriter, mAltSpliceJunctions);
         }
     }
 
     private synchronized static void writeAltSpliceJunctions(
-            final BufferedWriter writer, final List<AltSpliceJunction> altSpliceJunctions, final GeneCollection geneCollection)
+            final BufferedWriter unfilteredWriter, final BufferedWriter passWriter, final List<AltSpliceJunction> altSpliceJunctions)
     {
         try
         {
-            for(final AltSpliceJunction altSJ : altSpliceJunctions)
+            for(AltSpliceJunction altSJ : altSpliceJunctions)
             {
-                final GeneReadData gene = geneCollection.genes().stream()
-                        .filter(x -> x.GeneData.GeneId.equals(altSJ.getGeneId())).findFirst().orElse(null);
+                NovelSpliceJunction novelSpliceJunction = altSJ.convert();
 
-                writer.write(altSJ.toCsv(gene.GeneData));
-                writer.newLine();
+                unfilteredWriter.write(altSJ.write(novelSpliceJunction));
+                unfilteredWriter.newLine();
+
+                if(altSJ.filters().isEmpty())
+                {
+                    passWriter.write(NovelSpliceJunctionFile.write(novelSpliceJunction));
+                    passWriter.newLine();
+                }
             }
-
         }
         catch(IOException e)
         {
             ISF_LOGGER.error("failed to write alt splice junction file: {}", e.toString());
         }
     }
-
 }

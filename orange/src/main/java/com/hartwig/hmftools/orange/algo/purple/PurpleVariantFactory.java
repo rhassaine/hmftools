@@ -1,108 +1,154 @@
 package com.hartwig.hmftools.orange.algo.purple;
 
-import java.util.List;
-import java.util.stream.Collectors;
+import static java.lang.Math.abs;
 
+import static com.hartwig.hmftools.common.variant.impact.AltTranscriptReportableInfo.parseAltTranscriptInfo;
+
+import java.util.List;
+import java.util.Set;
+
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+import com.hartwig.hmftools.common.driver.DriverCatalog;
+import com.hartwig.hmftools.common.variant.SmallVariant;
+import com.hartwig.hmftools.common.variant.impact.AltTranscriptReportableInfo;
 import com.hartwig.hmftools.common.variant.impact.VariantEffect;
+import com.hartwig.hmftools.datamodel.common.AllelicDepth;
 import com.hartwig.hmftools.datamodel.purple.HotspotType;
 import com.hartwig.hmftools.datamodel.purple.ImmutablePurpleTranscriptImpact;
 import com.hartwig.hmftools.datamodel.purple.ImmutablePurpleVariant;
-import com.hartwig.hmftools.datamodel.purple.PurpleAllelicDepth;
 import com.hartwig.hmftools.datamodel.purple.PurpleGenotypeStatus;
 import com.hartwig.hmftools.datamodel.purple.PurpleTranscriptImpact;
 import com.hartwig.hmftools.datamodel.purple.PurpleVariant;
 import com.hartwig.hmftools.datamodel.purple.PurpleVariantEffect;
 import com.hartwig.hmftools.datamodel.purple.PurpleVariantType;
-import com.hartwig.hmftools.orange.algo.pave.PaveAlgo;
-import com.hartwig.hmftools.orange.algo.pave.PaveEntry;
 import com.hartwig.hmftools.orange.conversion.ConversionUtil;
 import com.hartwig.hmftools.orange.conversion.PurpleConversion;
 
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class PurpleVariantFactory
+public final class PurpleVariantFactory
 {
-    @NotNull
-    private final PaveAlgo paveAlgo;
-
-    public PurpleVariantFactory(final PaveAlgo paveAlgo)
+    public static PurpleVariant buildPurpleVariant(
+            final SmallVariant variant, final List<SmallVariant> allVariants, @Nullable final DriverCatalog driver, boolean isGermline,
+            @Nullable final String plotFilename)
     {
-        this.paveAlgo = paveAlgo;
-    }
+        List<AltTranscriptReportableInfo> altTransEffects = parseAltTranscriptInfo(variant.otherReportedEffects());
 
-    @Nullable
-    public List<PurpleVariant> fromPurpleVariantContext(@Nullable List<PurpleVariantContext> contexts)
-    {
-        if(contexts == null)
+        PurpleTranscriptImpact canonicalImpact = extractCanonicalImpact(variant);
+
+        List<PurpleTranscriptImpact> nonCanonicalTransImpacts = Lists.newArrayList();
+
+        for(AltTranscriptReportableInfo altTransInfo : altTransEffects)
         {
-            return null;
+            // convert / filter etc
+            if(variant.reportableTranscripts().contains(altTransInfo.TransName))
+            {
+                PurpleTranscriptImpact otherTransImpact = createOtherImpact(altTransInfo, canonicalImpact);
+                nonCanonicalTransImpacts.add(otherTransImpact);
+            }
         }
-        return contexts.stream().map(this::fromPurpleVariantContext).collect(Collectors.toList());
-    }
 
-    public PurpleVariant fromPurpleVariantContext(final PurpleVariantContext context)
-    {
-        List<PurpleTranscriptImpact> purpleVariantTranscriptImpacts =
-                context.otherImpacts()
-                        .stream()
-                        .map(x -> PurpleConversion.convert(x, context.reportableTranscriptsOrEmpty().contains(x.Transcript)))
-                        .collect(Collectors.toList());
-        PurpleAllelicDepth rnaDepth = context.rnaDepth() != null ? PurpleConversion.convert(context.rnaDepth()) : null;
+        List<Integer> phasedVariantIds = findPhasedVariantIds(variant, allVariants);
+
+        AllelicDepth rnaDepth = variant.rnaDepth() != null ? PurpleConversion.convert(variant.rnaDepth()) : null;
 
         return ImmutablePurpleVariant.builder()
-                .type(PurpleVariantType.valueOf(context.type().name()))
-                .gene(context.gene())
-                .chromosome(context.chromosome())
-                .position(context.position())
-                .ref(context.ref())
-                .alt(context.alt())
-                .worstCodingEffect(PurpleConversion.convert(context.worstCodingEffect()))
-                .canonicalImpact(extractCanonicalImpact(context))
-                .otherImpacts(purpleVariantTranscriptImpacts)
-                .hotspot(HotspotType.valueOf(context.hotspot().name()))
-                .tumorDepth(PurpleConversion.convert(context.allelicDepth()))
+                .type(PurpleVariantType.valueOf(variant.type().name()))
+                .gene(variant.gene())
+                .chromosome(variant.chromosome())
+                .position(variant.position())
+                .ref(variant.ref())
+                .alt(variant.alt())
+                .driverLikelihood(driver != null ? driver.driverLikelihood() : 0)
+                .worstCodingEffect(PurpleConversion.convert(variant.worstCodingEffect()))
+                .canonicalImpact(canonicalImpact)
+                .otherImpacts(nonCanonicalTransImpacts)
+                .hotspot(HotspotType.valueOf(variant.hotspot().name()))
+                .tumorDepth(PurpleConversion.convert(variant.allelicDepth()))
                 .rnaDepth(rnaDepth)
-                .adjustedCopyNumber(context.adjustedCopyNumber())
-                .adjustedVAF(context.adjustedVAF())
-                .minorAlleleCopyNumber(context.minorAlleleCopyNumber())
-                .variantCopyNumber(context.variantCopyNumber())
-                .biallelic(context.biallelic())
-                .biallelicProbability(context.biallelicProbability())
-                .genotypeStatus(PurpleGenotypeStatus.valueOf(context.genotypeStatus().name()))
-                .repeatCount(context.repeatCount())
-                .subclonalLikelihood(context.subclonalLikelihood())
-                .localPhaseSets(context.localPhaseSets())
+                .adjustedCopyNumber(variant.adjustedCopyNumber())
+                .adjustedVAF(variant.adjustedVAF())
+                .minorAlleleCopyNumber(variant.minorAlleleCopyNumber())
+                .variantCopyNumber(variant.variantCopyNumber())
+                .biallelic(variant.biallelic())
+                .biallelicProbability(variant.biallelicProbability())
+                .genotypeStatus(PurpleGenotypeStatus.valueOf(variant.genotypeStatus().name()))
+                .repeatCount(variant.repeatCount())
+                .subclonalLikelihood(variant.subclonalLikelihood())
+                .somaticLikelihood(PurpleConversion.convert(variant.somaticLikelihood()))
+                .localPhaseSets(phasedVariantIds)
+                .clinvarPathogenicity(isGermline ? variant.pathogenicity() : null)
+                .gnomadFrequency(isGermline ? variant.gnomadFrequency() : null)
+                .plotFilename(plotFilename)
                 .build();
     }
 
-    private PurpleTranscriptImpact extractCanonicalImpact(final PurpleVariantContext purpleContext)
+    private static List<Integer> findPhasedVariantIds(final SmallVariant variant, final List<SmallVariant> allVariants)
     {
-        PaveEntry paveEntry = paveAlgo.run(purpleContext.gene(), purpleContext.canonicalTranscript(), purpleContext.position());
-        List<VariantEffect> variantEffects = VariantEffect.effectsToList(purpleContext.canonicalEffect());
+        if(variant.localPhaseSets() == null || variant.localPhaseSets().isEmpty())
+            return null;
+
+        Set<Integer> phasedIds = Sets.newHashSet();
+
+        for(SmallVariant otherVariant : allVariants)
+        {
+            if(otherVariant == variant)
+                continue;
+
+            if(otherVariant.localPhaseSets() == null || otherVariant.localPhaseSets().isEmpty())
+                continue;
+
+            if(!otherVariant.chromosome().equals(variant.chromosome()))
+                continue;
+
+            if(abs(variant.position() - otherVariant.position()) <= 1000) // plausible distance to be phased
+            {
+                for(Integer lpsId : variant.localPhaseSets())
+                {
+                    if(otherVariant.localPhaseSets().contains(lpsId))
+                        phasedIds.add(lpsId);
+                }
+            }
+        }
+
+        return phasedIds.isEmpty() ? null : phasedIds.stream().toList();
+    }
+
+    private static PurpleTranscriptImpact createOtherImpact(
+            final AltTranscriptReportableInfo transImpactInfo, final PurpleTranscriptImpact canonicalImpact)
+    {
+        List<VariantEffect> variantEffects = VariantEffect.effectsToList(transImpactInfo.Effects);
         List<PurpleVariantEffect> purpleVariantEffects = ConversionUtil.mapToList(variantEffects, PurpleConversion::convert);
+
         return ImmutablePurpleTranscriptImpact.builder()
-                .transcript(purpleContext.canonicalTranscript())
-                .hgvsCodingImpact(purpleContext.canonicalHgvsCodingImpact())
-                .hgvsProteinImpact(purpleContext.canonicalHgvsProteinImpact())
-                .affectedCodon(paveEntry != null ? paveEntry.affectedCodon() : null)
-                .affectedExon(paveEntry != null ? paveEntry.affectedExon() : null)
-                .inSpliceRegion(purpleContext.spliceRegion())
+                .transcript(transImpactInfo.TransName)
+                .hgvsCodingImpact(transImpactInfo.HgvsCoding)
+                .hgvsProteinImpact(transImpactInfo.HgvsProtein)
+                .affectedCodon(canonicalImpact.affectedCodon())
+                .affectedExon(canonicalImpact.affectedExon())
+                .inSpliceRegion(canonicalImpact.inSpliceRegion())
                 .effects(purpleVariantEffects)
-                .codingEffect(PurpleConversion.convert(purpleContext.canonicalCodingEffect()))
-                .reported(isCanonicalTranscriptReported(purpleContext))
+                .codingEffect(canonicalImpact.codingEffect())
+                .reported(true)
                 .build();
     }
 
-    private boolean isCanonicalTranscriptReported(final PurpleVariantContext purpleContext)
+    private static PurpleTranscriptImpact extractCanonicalImpact(final SmallVariant variant)
     {
-        if(purpleContext.reportableTranscriptsOrEmpty().isEmpty())
-        {
-            return purpleContext.reported();
-        }
-        else
-        {
-            return purpleContext.reportableTranscriptsOrEmpty().contains(purpleContext.canonicalTranscript());
-        }
+        List<VariantEffect> variantEffects = VariantEffect.effectsToList(variant.canonicalEffect());
+        List<PurpleVariantEffect> purpleVariantEffects = ConversionUtil.mapToList(variantEffects, PurpleConversion::convert);
+
+        return ImmutablePurpleTranscriptImpact.builder()
+                .transcript(variant.canonicalTranscript())
+                .hgvsCodingImpact(variant.canonicalHgvsCodingImpact())
+                .hgvsProteinImpact(variant.canonicalHgvsProteinImpact())
+                .affectedCodon(variant.canonicalAffectedCodon())
+                .affectedExon(variant.canonicalAffectedExon())
+                .inSpliceRegion(variant.spliceRegion())
+                .effects(purpleVariantEffects)
+                .codingEffect(PurpleConversion.convert(variant.canonicalCodingEffect()))
+                .reported(variant.reported())
+                .build();
     }
 }

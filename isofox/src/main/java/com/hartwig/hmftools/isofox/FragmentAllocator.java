@@ -9,12 +9,13 @@ import static com.hartwig.hmftools.common.sv.StartEndIterator.SE_PAIR;
 import static com.hartwig.hmftools.common.region.BaseRegion.positionWithin;
 import static com.hartwig.hmftools.common.genome.region.Orientation.ORIENT_FWD;
 import static com.hartwig.hmftools.isofox.IsofoxConfig.ISF_LOGGER;
+import static com.hartwig.hmftools.isofox.IsofoxConstants.CHIMERIC_EXCLUDED_REGIONS_V37;
+import static com.hartwig.hmftools.isofox.IsofoxConstants.CHIMERIC_EXCLUDED_REGIONS_V38;
 import static com.hartwig.hmftools.isofox.IsofoxConstants.MULTI_MAP_QUALITY_THRESHOLD;
 import static com.hartwig.hmftools.isofox.IsofoxConstants.SINGLE_MAP_QUALITY;
 import static com.hartwig.hmftools.isofox.IsofoxFunction.ALT_SPLICE_JUNCTIONS;
 import static com.hartwig.hmftools.isofox.IsofoxFunction.STATISTICS;
 import static com.hartwig.hmftools.isofox.IsofoxFunction.TRANSCRIPT_COUNTS;
-import static com.hartwig.hmftools.isofox.IsofoxFunction.UNMAPPED_READS;
 import static com.hartwig.hmftools.isofox.common.FragmentMatchType.DISCORDANT;
 import static com.hartwig.hmftools.isofox.common.FragmentType.ALT;
 import static com.hartwig.hmftools.isofox.common.FragmentType.CHIMERIC;
@@ -25,11 +26,12 @@ import static com.hartwig.hmftools.isofox.common.FragmentType.TOTAL;
 import static com.hartwig.hmftools.isofox.common.FragmentType.TRANS_SUPPORTING;
 import static com.hartwig.hmftools.isofox.common.FragmentType.UNSPLICED;
 import static com.hartwig.hmftools.isofox.IsofoxFunction.FUSIONS;
-import static com.hartwig.hmftools.isofox.common.ReadRecord.MAX_SC_BASE_MATCH;
-import static com.hartwig.hmftools.isofox.common.ReadRecord.findOverlappingRegions;
-import static com.hartwig.hmftools.isofox.common.ReadRecord.getUniqueValidRegion;
-import static com.hartwig.hmftools.isofox.common.ReadRecord.markRegionBases;
-import static com.hartwig.hmftools.isofox.common.ReadRecord.validTranscriptType;
+import static com.hartwig.hmftools.isofox.common.GeneRegionFilters.inExcludedRegion;
+import static com.hartwig.hmftools.isofox.common.Read.MAX_SC_BASE_MATCH;
+import static com.hartwig.hmftools.isofox.common.Read.findOverlappingRegions;
+import static com.hartwig.hmftools.isofox.common.Read.getUniqueValidRegion;
+import static com.hartwig.hmftools.isofox.common.Read.markRegionBases;
+import static com.hartwig.hmftools.isofox.common.Read.validTranscriptType;
 import static com.hartwig.hmftools.isofox.common.RegionMatchType.EXON_INTRON;
 import static com.hartwig.hmftools.isofox.common.CommonUtils.deriveCommonRegions;
 import static com.hartwig.hmftools.isofox.common.TransMatchType.OTHER_TRANS;
@@ -61,8 +63,7 @@ import com.hartwig.hmftools.isofox.common.FragmentTracker;
 import com.hartwig.hmftools.isofox.common.GeneCollection;
 import com.hartwig.hmftools.isofox.common.FragmentType;
 import com.hartwig.hmftools.isofox.common.GeneReadData;
-import com.hartwig.hmftools.isofox.common.GeneRegionFilters;
-import com.hartwig.hmftools.isofox.common.ReadRecord;
+import com.hartwig.hmftools.isofox.common.Read;
 import com.hartwig.hmftools.isofox.common.RegionMatchType;
 import com.hartwig.hmftools.isofox.common.RegionReadData;
 import com.hartwig.hmftools.isofox.common.TransExonRef;
@@ -71,13 +72,12 @@ import com.hartwig.hmftools.isofox.expression.CategoryCountsData;
 import com.hartwig.hmftools.isofox.adjusts.GcRatioCounts;
 import com.hartwig.hmftools.isofox.expression.ExpressionReadTracker;
 import com.hartwig.hmftools.isofox.fusion.ChimericReadTracker;
+import com.hartwig.hmftools.isofox.novel.AltSjCohortCache;
 import com.hartwig.hmftools.isofox.novel.AltSpliceJunctionFinder;
 import com.hartwig.hmftools.isofox.novel.RetainedIntronFinder;
 import com.hartwig.hmftools.isofox.novel.SpliceSiteCounter;
 import com.hartwig.hmftools.isofox.results.ResultsWriter;
-import com.hartwig.hmftools.isofox.unmapped.UmrFinder;
 
-import htsjdk.samtools.CigarOperator;
 import htsjdk.samtools.SAMFlag;
 import htsjdk.samtools.SAMRecord;
 import htsjdk.samtools.SamReader;
@@ -102,23 +102,22 @@ public class FragmentAllocator
     private final RetainedIntronFinder mRetainedIntronFinder;
     private final ChimericReadTracker mChimericReads;
     private final SpliceSiteCounter mSpliceSiteCounter;
-    private final UmrFinder mUmrFinder;
     private final int[] mValidReadStartRegion;
     private final BaseDepth mBaseDepth;
 
     private final boolean mRunFusions;
     private final boolean mFusionsOnly;
     private final boolean mStatsOnly;
-    private final boolean mUnmappedOnly;
 
     private final BufferedWriter mReadDataWriter;
     private long mEnrichedGeneFragments;
     private ChrBaseRegion mExcludedRegion;
+    private ChrBaseRegion mExcludedChimericRegion;
 
     private static final int GENE_LOG_COUNT = 5000000;
     private static final int NON_GENIC_BASE_DEPTH_WIDTH = 250000;
 
-    public FragmentAllocator(final IsofoxConfig config, final ResultsWriter resultsWriter)
+    public FragmentAllocator(final IsofoxConfig config, final AltSjCohortCache altSjCohortCache, final ResultsWriter resultsWriter)
     {
         mConfig = config;
 
@@ -128,13 +127,13 @@ public class FragmentAllocator
         mRunFusions = mConfig.Functions.contains(FUSIONS);
         mFusionsOnly = mConfig.runFusionsOnly();
         mStatsOnly = mConfig.runStatisticsOnly();
-        mUnmappedOnly = mConfig.runFunction(UNMAPPED_READS) && mConfig.Functions.size() == 1;
 
         mGeneReadCount = 0;
         mTotalBamReadCount = 0;
         mNextGeneCountLog = 0;
         mEnrichedGeneFragments = 0;
         mExcludedRegion = null;
+        mExcludedChimericRegion = null;
         mValidReadStartRegion = new int[SE_PAIR];
 
         mSamReader = mConfig.BamFile != null ?
@@ -144,7 +143,7 @@ public class FragmentAllocator
         boolean keepDuplicates = (mConfig.runFunction(TRANSCRIPT_COUNTS) || mConfig.runFunction(STATISTICS)) && !mConfig.DropDuplicates;
 
         // reads with supplementary alignment data are only used for chimeric read handling (eg fusions & alt-SJs)
-        boolean keepSupplementaries = mRunFusions || mConfig.runFunction(ALT_SPLICE_JUNCTIONS) || mConfig.runFunction(UNMAPPED_READS);
+        boolean keepSupplementaries = mRunFusions || mConfig.runFunction(ALT_SPLICE_JUNCTIONS);
 
         boolean keepSecondaries = mConfig.runFunction(TRANSCRIPT_COUNTS);
         int minMapQuality = keepSecondaries ? 0 : SINGLE_MAP_QUALITY;
@@ -157,9 +156,11 @@ public class FragmentAllocator
         mSpliceSiteCounter = new SpliceSiteCounter(resultsWriter.getSpliceSiteWriter());
 
         mExpressionReadTracker = new ExpressionReadTracker(mConfig);
-        mAltSpliceJunctionFinder = new AltSpliceJunctionFinder(mConfig, resultsWriter.getAltSpliceJunctionWriter());
+
+        mAltSpliceJunctionFinder = new AltSpliceJunctionFinder(
+                mConfig, altSjCohortCache, resultsWriter.getAltSjUnfilteredWriter(), resultsWriter.getAltSjPassingWriter());
+
         mRetainedIntronFinder = new RetainedIntronFinder(mConfig, resultsWriter.getRetainedIntronWriter());
-        mUmrFinder = new UmrFinder(mConfig, resultsWriter.getUnmappedReadsWriter());
     }
 
     public int totalReadCount() { return mTotalBamReadCount; }
@@ -185,7 +186,7 @@ public class FragmentAllocator
         mExcludedRegion = null;
     }
 
-    public void produceBamCounts(final GeneCollection geneCollection, final ChrBaseRegion geneRegion)
+    public void processBam(final GeneCollection geneCollection, final ChrBaseRegion geneRegion)
     {
         clearCache();
 
@@ -212,21 +213,28 @@ public class FragmentAllocator
         if(mRetainedIntronFinder.enabled())
             mRetainedIntronFinder.setGeneData(mCurrentGenes);
 
-        if(mUmrFinder.enabled())
-            mUmrFinder.setGeneData(mCurrentGenes);
-
         mValidReadStartRegion[SE_START] = geneRegion.start();
         mValidReadStartRegion[SE_END] = geneRegion.end();
 
-        if(mConfig.Filters.ExcludedRegion != null && geneRegion.overlaps(mConfig.Filters.ExcludedRegion))
+        mExcludedRegion = mConfig.Filters.ExcludedRegions.stream().filter(x -> geneRegion.overlaps(x)).findFirst().orElse(null);
+
+        List<ChrBaseRegion> excludedChimericRegions = mConfig.RefGenVersion.is37() ? CHIMERIC_EXCLUDED_REGIONS_V37 : CHIMERIC_EXCLUDED_REGIONS_V38;
+        mExcludedChimericRegion = excludedChimericRegions.stream().filter(x -> x.overlaps(geneRegion)).findFirst().orElse(null);
+
+        if(mExcludedRegion != null)
         {
-            // special handling to avoid any specified enriched region (in this case LINC00486's poly-G sequence)
-            // has no genes overlapping this
-            mExcludedRegion = mConfig.Filters.ExcludedRegion;
-            final ChrBaseRegion preRegion = new ChrBaseRegion(geneRegion.Chromosome, geneRegion.start(), mExcludedRegion.start() - 100);
-            final ChrBaseRegion postRegion = new ChrBaseRegion(geneRegion.Chromosome, mExcludedRegion.end() + 100, geneRegion.end());
-            mBamSlicer.slice(mSamReader, preRegion, this::processSamRecord);
-            mBamSlicer.slice(mSamReader, postRegion, this::processSamRecord);
+            // slice around any excluded regions - assume they have been configured to have at most one per gene collection for now
+            ISF_LOGGER.debug("gene collection genes({}) region({}) slicing around excluded region({})",
+                    mCurrentGenes.geneNames(), geneRegion, mExcludedRegion);
+
+            ChrBaseRegion preRegion = new ChrBaseRegion(geneRegion.Chromosome, geneRegion.start(), mExcludedRegion.start() - 1000);
+            ChrBaseRegion postRegion = new ChrBaseRegion(geneRegion.Chromosome, mExcludedRegion.end() + 1000, geneRegion.end());
+
+            if(preRegion.isValid())
+                mBamSlicer.slice(mSamReader, preRegion, this::processSamRecord);
+
+            if(postRegion.isValid())
+                mBamSlicer.slice(mSamReader, postRegion, this::processSamRecord);
         }
         else
         {
@@ -242,29 +250,23 @@ public class FragmentAllocator
             processChimericNovelJunctions();
         }
 
-        if(mUmrFinder.enabled())
-        {
-            mUmrFinder.processUnpairedReads(mFragmentReads);
-            mUmrFinder.writeUnmappedReads();
-        }
-
-        ISF_LOGGER.debug("genes({}) bamReadCount({}) depth(bases={} perc={} max={})",
+        ISF_LOGGER.trace("genes({}) bamReadCount({}) depth(bases={} perc={} max={})",
                 mCurrentGenes.geneNames(), mGeneReadCount, mBaseDepth.basesWithDepth(),
                 String.format("%.3f", mBaseDepth.basesWithDepthPerc()), mBaseDepth.maxDepth());
     }
 
     private void processSamRecord(final SAMRecord record)
     {
-        if(mConfig.skipFilteredRead(record.getReadName()))
-            return;
-
         // to avoid double-processing of reads overlapping 2 (or more) gene collections, only process them if they start in this
         // gene collection or its preceding non-genic region
         if(!positionWithin(record.getStart(), mValidReadStartRegion[SE_START], mValidReadStartRegion[SE_END]))
             return;
 
-        if(inExcludedRegion(record))
+        if(inExcludedChimericRegion(record))
             return;
+
+        // if(mConfig.skipFilteredRead(record.getReadName()))
+        //    return;
 
         trackFragmentCounts(record);
 
@@ -274,10 +276,7 @@ public class FragmentAllocator
             return;
         }
 
-        ReadRecord read = ReadRecord.from(record);
-
-        if(mUmrFinder.enabled())
-            read.setBaseQualities(record.getBaseQualities());
+        Read read = Read.from(record);
 
         processRead(read);
     }
@@ -300,7 +299,7 @@ public class FragmentAllocator
             mCurrentGenes.addCount(DUPLICATE, 1);
     }
 
-    private void processRead(final ReadRecord read)
+    private void processRead(final Read read)
     {
         // for each record find all exons with an overlap
         // skip records if either end isn't in one of the exons for this gene
@@ -326,10 +325,10 @@ public class FragmentAllocator
         checkFragmentRead(read);
     }
 
-    private boolean checkFragmentRead(final ReadRecord read)
+    private boolean checkFragmentRead(final Read read)
     {
         // check if the 2 reads from a fragment exist and if so handle them a pair, returning true
-        ReadRecord otherRead = mFragmentReads.checkRead(read);
+        Read otherRead = mFragmentReads.checkRead(read);
 
         if(otherRead != null)
         {
@@ -340,7 +339,7 @@ public class FragmentAllocator
         return false;
     }
 
-    private void processFragmentReads(final ReadRecord read1, final ReadRecord read2)
+    private void processFragmentReads(final Read read1, final Read read2)
     {
         /* process the pair of reads from a fragment:
             - fully outside the gene (due to the buffer used, ignore
@@ -352,6 +351,9 @@ public class FragmentAllocator
                 - both reads within 2 exons (including spanning intermediary ones) and/or either exon at the boundary
             - not supporting any transcript - eg alternative splice sites or unspliced reads
         */
+
+        read1.trimAdapterSoftClipBases(read2);
+        read2.trimAdapterSoftClipBases(read1);
 
         boolean isDuplicate = read1.isDuplicate() || read2.isDuplicate();
         int minMapQuality = min(read1.mapQuality(), read2.mapQuality());
@@ -393,7 +395,6 @@ public class FragmentAllocator
                     mCurrentGenes.addCount(CHIMERIC, 1);
             }
 
-            mUmrFinder.processReads(read1, read2, true);
             return;
         }
 
@@ -408,11 +409,6 @@ public class FragmentAllocator
             if(mFusionsOnly)
                 return;
         }
-
-        mUmrFinder.processReads(read1, read2, false);
-
-        if(mUnmappedOnly)
-            return;
 
         int readPosMin = min(read1.PosStart, read2.PosStart);
         int readPosMax = max(read1.PosEnd, read2.PosEnd);
@@ -680,7 +676,7 @@ public class FragmentAllocator
         }
     }
 
-    private Boolean findGeneStrand(final ReadRecord read, final List<Integer> transcripts)
+    private Boolean findGeneStrand(final Read read, final List<Integer> transcripts)
     {
         for(int transId : transcripts)
         {
@@ -690,10 +686,10 @@ public class FragmentAllocator
                 if(transExonRef != null)
                 {
                     GeneReadData geneData = mCurrentGenes.genes().stream()
-                            .filter(x -> x.GeneData.GeneId.equals(transExonRef.GeneId)).findFirst().orElse(null);
+                            .filter(x -> x.Gene.GeneId.equals(transExonRef.GeneId)).findFirst().orElse(null);
 
                     if(geneData != null)
-                        return geneData.GeneData.Strand == ORIENT_FWD;
+                        return geneData.Gene.Strand == ORIENT_FWD;
                 }
             }
         }
@@ -701,7 +697,7 @@ public class FragmentAllocator
         return null;
     }
 
-    private int calcFragmentLength(int transId, final ReadRecord read1, final ReadRecord read2)
+    private int calcFragmentLength(int transId, final Read read1, final Read read2)
     {
         final TranscriptData transData = mCurrentGenes.getTranscripts().stream().filter(x -> x.TransId == transId).findFirst().orElse(null);
         if(transData == null)
@@ -710,7 +706,7 @@ public class FragmentAllocator
         return calcFragmentLength(transData, read1, read2);
     }
 
-    public static int calcFragmentLength(final TranscriptData transData, final ReadRecord read1, final ReadRecord read2)
+    public static int calcFragmentLength(final TranscriptData transData, final Read read1, final Read read2)
     {
         int minReadPos = min(read1.PosStart, read2.PosStart);
         int maxReadPos = max(read1.PosEnd, read2.PosEnd);
@@ -763,12 +759,12 @@ public class FragmentAllocator
         return transcriptBases;
     }
 
-    private boolean inExcludedRegion(final SAMRecord record)
+    private boolean inExcludedChimericRegion(final SAMRecord record)
     {
-        if(mExcludedRegion == null)
+        if(mExcludedChimericRegion == null)
             return false;
 
-        return GeneRegionFilters.inExcludedRegion(mConfig.Filters.ExcludedRegion, record);
+        return inExcludedRegion(mExcludedChimericRegion, record);
     }
 
     private boolean reachedGeneReadLimit()
@@ -816,9 +812,9 @@ public class FragmentAllocator
 
     public List<CategoryCountsData> getTransComboData() { return mExpressionReadTracker.getTransComboData(); }
 
-    private void processIntronicReads(final List<GeneReadData> genes, final ReadRecord read1, final ReadRecord read2)
+    private void processIntronicReads(final List<GeneReadData> genes, final Read read1, final Read read2)
     {
-        if(read1.Cigar.containsOperator(CigarOperator.N) || read2.Cigar.containsOperator(CigarOperator.N))
+        if(read1.containsSplit() || read2.containsSplit())
         {
             mCurrentGenes.addCount(ALT, 1);
 
@@ -841,10 +837,10 @@ public class FragmentAllocator
 
         final List<Integer> invalidTrans = Lists.newArrayList();
 
-        for(final List<ReadRecord> reads : mChimericReads.getLocalChimericReads())
+        for(final List<Read> reads : mChimericReads.getLocalChimericReads())
         {
-            ReadRecord read1 = null;
-            ReadRecord read2 = null;
+            Read read1 = null;
+            Read read2 = null;
 
             if(reads.size() == 2)
             {
@@ -853,7 +849,7 @@ public class FragmentAllocator
             }
             else if(reads.size() == 3)
             {
-                for(ReadRecord read : reads)
+                for(Read read : reads)
                 {
                     if(read.hasSuppAlignment())
                     {
@@ -888,6 +884,7 @@ public class FragmentAllocator
         if(mAltSpliceJunctionFinder.enabled())
         {
             mAltSpliceJunctionFinder.prioritiseGenes();
+            mAltSpliceJunctionFinder.finalise();
             mAltSpliceJunctionFinder.writeAltSpliceJunctions();
         }
 
@@ -933,7 +930,7 @@ public class FragmentAllocator
     }
 
     private synchronized static void writeReadData(
-            final BufferedWriter writer, final GeneReadData geneReadData, int readIndex, final ReadRecord read, final ReadRecord otherRead,
+            final BufferedWriter writer, final GeneReadData geneReadData, int readIndex, final Read read, final Read otherRead,
             FragmentType geneReadType, int validTranscripts)
     {
         if(read.getTranscriptClassifications().isEmpty())
@@ -955,7 +952,7 @@ public class FragmentAllocator
                         continue;
 
                     writer.write(String.format("%s,%s,%d,%s",
-                            geneReadData.GeneData.GeneId, geneReadData.GeneData.GeneName, readIndex, read.Id));
+                            geneReadData.Gene.GeneId, geneReadData.Gene.GeneName, readIndex, read.Id));
 
                     int calcFragmentLength = read.fragmentInsertSize();
 
@@ -967,7 +964,7 @@ public class FragmentAllocator
                     }
 
                     writer.write(String.format(",%s,%d,%d,%s,%d,%d",
-                            read.Chromosome, read.PosStart, read.PosEnd, read.Cigar.toString(),
+                            read.Chromosome, read.PosStart, read.PosEnd, read.cigarStr(),
                             read.fragmentInsertSize(), calcFragmentLength));
 
                     writer.write(String.format(",%s,%d,%s,%s,%s",
@@ -990,7 +987,7 @@ public class FragmentAllocator
     }
 
     @VisibleForTesting
-    public void processReadRecords(final GeneCollection geneCollection, final List<ReadRecord> readRecords)
+    public void processReadRecords(final GeneCollection geneCollection, final List<Read> reads)
     {
         mCurrentGenes = geneCollection;
         mBaseDepth.initialise(geneCollection.regionBounds());
@@ -1004,12 +1001,12 @@ public class FragmentAllocator
         mRetainedIntronFinder.setGeneData(mCurrentGenes);
         mChimericReads.initialise(mCurrentGenes);
 
-        if(readRecords.size() == 2)
+        if(reads.size() == 2)
         {
-            readRecords.get(0).setFlag(SAMFlag.FIRST_OF_PAIR, true);
+            reads.get(0).setFlag(SAMFlag.FIRST_OF_PAIR, true);
         }
 
-        readRecords.forEach(x -> processRead(x));
+        reads.forEach(x -> processRead(x));
     }
 
 

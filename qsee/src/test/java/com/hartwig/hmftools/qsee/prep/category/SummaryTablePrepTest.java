@@ -3,21 +3,19 @@ package com.hartwig.hmftools.qsee.prep.category;
 import static org.junit.Assert.*;
 
 import java.util.EnumMap;
-import java.util.EnumSet;
 import java.util.List;
-import java.util.Set;
+import java.util.stream.Stream;
 
-import com.hartwig.hmftools.common.amber.AmberQC;
-import com.hartwig.hmftools.common.amber.ImmutableAmberQC;
+import com.hartwig.hmftools.common.metrics.BamFlagStats;
 import com.hartwig.hmftools.common.metrics.BamMetricCoverage;
 import com.hartwig.hmftools.common.metrics.BamMetricSummary;
+import com.hartwig.hmftools.common.metrics.ImmutableBamFlagStats;
 import com.hartwig.hmftools.common.metrics.ImmutableBamMetricSummary;
 import com.hartwig.hmftools.common.metrics.ValueFrequency;
 import com.hartwig.hmftools.common.purple.FittedPurity;
 import com.hartwig.hmftools.common.purple.FittedPurityMethod;
 import com.hartwig.hmftools.common.purple.FittedPurityScore;
 import com.hartwig.hmftools.common.purple.Gender;
-import com.hartwig.hmftools.common.purple.ImmutableFittedPurity;
 import com.hartwig.hmftools.common.purple.ImmutableFittedPurityScore;
 import com.hartwig.hmftools.common.purple.ImmutablePurityContext;
 import com.hartwig.hmftools.common.purple.ImmutablePurpleQC;
@@ -27,65 +25,69 @@ import com.hartwig.hmftools.common.purple.PurpleQC;
 import com.hartwig.hmftools.common.purple.PurpleQCStatus;
 import com.hartwig.hmftools.common.purple.RunMode;
 import com.hartwig.hmftools.common.purple.TumorMutationalStatus;
+import com.hartwig.hmftools.qsee.common.SampleType;
 import com.hartwig.hmftools.qsee.feature.Feature;
-import com.hartwig.hmftools.qsee.prep.table.SummaryTableFeature;
+import com.hartwig.hmftools.qsee.feature.SourceTool;
+import com.hartwig.hmftools.qsee.prep.category.table.BamMetricsData;
+import com.hartwig.hmftools.qsee.prep.category.table.SummaryTableFeature;
+import com.hartwig.hmftools.qsee.status.ThresholdRegistry;
 
 import org.junit.Test;
 
 public class SummaryTablePrepTest
 {
     @Test
-    public void allSummaryTableFeaturesExtracted()
+    public void canCalcPropBasesAboveCoverage()
     {
-        AmberQC amberQC = createTestAmberQC();
-        PurityContext purityContext = createTestPurityContext();
-        BamMetricSummary bamMetricSummary = createTestBamMetricSummary();
-        BamMetricCoverage bamMetricCoverage = createTestBamMetricCoverage();
-
         EnumMap<SummaryTableFeature, Feature> featuresMap = new EnumMap<>(SummaryTableFeature.class);
-        SummaryTablePrep.putFeatures(amberQC, featuresMap);
-        SummaryTablePrep.putFeatures(purityContext, featuresMap);
-        SummaryTablePrep.putFeatures(bamMetricSummary, featuresMap);
-        SummaryTablePrep.putFeatures(bamMetricCoverage, featuresMap);
+        BamMetricCoverage bamMetricCoverage = createTestBamMetricCoverage();
+        ThresholdRegistry qcThresholds = ThresholdRegistry.createWithoutThresholds();
+        SummaryTableBamMetricsPrep.putFeatures(featuresMap, bamMetricCoverage, SampleType.TUMOR, qcThresholds);
 
-        Set<SummaryTableFeature> allFeatures = EnumSet.allOf(SummaryTableFeature.class);
-        Set<SummaryTableFeature> populatedFeatures = featuresMap.keySet();
-
-        assertEquals(SummaryTableFeature.values().length, featuresMap.size());
-        assertEquals(allFeatures, populatedFeatures);
+        assertEquals(0.9, featuresMap.get(SummaryTableFeature.COVERAGE_ABOVE_10).value(), 0.01);
+        assertEquals(0.7, featuresMap.get(SummaryTableFeature.COVERAGE_ABOVE_30).value(), 0.01);
+        assertEquals(0.6, featuresMap.get(SummaryTableFeature.COVERAGE_ABOVE_100).value(), 0.01);
+        assertEquals(0.4, featuresMap.get(SummaryTableFeature.COVERAGE_ABOVE_250).value(), 0.01);
     }
 
     @Test
-    public void canCalcPropBasesWithMinCoverage()
+    public void canExtractPurpleFeatures()
     {
-        EnumMap<SummaryTableFeature, Feature> featuresMap = new EnumMap<>(SummaryTableFeature.class);
-        BamMetricCoverage bamMetricCoverage = createTestBamMetricCoverage();
-        SummaryTablePrep.putFeatures(bamMetricCoverage, featuresMap);
+        PurityContext purityContext = createTestPurityContext(List.of(PurpleQCStatus.PASS));
 
-        assertEquals(0.9, featuresMap.get(SummaryTableFeature.MIN_COVERAGE_10).value(), 0.01);
-        assertEquals(0.7, featuresMap.get(SummaryTableFeature.MIN_COVERAGE_30).value(), 0.01);
-        assertEquals(0.6, featuresMap.get(SummaryTableFeature.MIN_COVERAGE_100).value(), 0.01);
-        assertEquals(0.4, featuresMap.get(SummaryTableFeature.MIN_COVERAGE_250).value(), 0.01);
+        ThresholdRegistry qcThresholds = ThresholdRegistry.createWithoutThresholds();
+        List<Feature> features = SummaryTablePurplePrep.createFeatures(purityContext, qcThresholds);
+
+        List<SummaryTableFeature> expectedFeatures = Stream.of(SummaryTableFeature.values())
+                .filter(f -> f.sourceTool() == SourceTool.PURPLE)
+                .toList();
+
+        assertEquals(expectedFeatures.size(), features.size());
     }
 
-    private AmberQC createTestAmberQC()
+    @Test
+    public void canExtractBamMetricsFeatures()
     {
-        return ImmutableAmberQC.builder()
-                .contamination(0.01)
-                .consanguinityProportion(0.05)
-                .build();
+        BamMetricsData bamMetricsData = new BamMetricsData(
+                createTestBamMetricSummary(),
+                createTestBamMetricCoverage(),
+                createTestBamFlagStats(),
+                List.of()
+        );
+
+        ThresholdRegistry qcThresholds = ThresholdRegistry.createWithoutThresholds();
+        List<Feature> features = SummaryTableBamMetricsPrep.createFeatures(bamMetricsData, SampleType.TUMOR, qcThresholds);
+
+        List<SummaryTableFeature> expectedFeatures = Stream.of(SummaryTableFeature.values())
+                .filter(f -> f.sourceTool() == SourceTool.BAM_METRICS)
+                .toList();
+
+        assertEquals(expectedFeatures.size(), features.size());
     }
 
-    private PurityContext createTestPurityContext()
+    private PurityContext createTestPurityContext(List<PurpleQCStatus> purpleQcStatuses)
     {
-        FittedPurity fittedPurity = ImmutableFittedPurity.builder()
-                .purity(0.85)
-                .ploidy(2.0)
-                .normFactor(1.0)
-                .score(0.95)
-                .diploidProportion(1.0)
-                .somaticPenalty(0.0)
-                .build();
+        FittedPurity fittedPurity = new FittedPurity(0.85, 1.0, 2.0, 0.95, 1.0, 0.0);
 
         FittedPurityScore score = ImmutableFittedPurityScore.builder()
                 .minPurity(0.80)
@@ -97,7 +99,7 @@ public class SummaryTablePrepTest
                 .build();
 
         PurpleQC qc = ImmutablePurpleQC.builder()
-                .status(List.of(PurpleQCStatus.PASS))
+                .status(purpleQcStatuses)
                 .method(FittedPurityMethod.NORMAL)
                 .copyNumberSegments(100)
                 .unsupportedCopyNumberSegments(1)
@@ -109,7 +111,6 @@ public class SummaryTablePrepTest
                 .lohPercent(0.01)
                 .amberMeanDepth(100)
                 .tincLevel(0.1)
-                .chimerismPercentage(0.01)
                 .build();
 
         return ImmutablePurityContext.builder()
@@ -151,6 +152,7 @@ public class SummaryTablePrepTest
                 .cappedCoveragePercent(0.01)
                 .coverageLevels(List.of(30, 60, 100))
                 .coveragePercents(List.of(0.95, 0.90, 0.85))
+                .offTargetReads(0)
                 .build();
     }
 
@@ -170,5 +172,20 @@ public class SummaryTablePrepTest
         );
 
         return new BamMetricCoverage(coverageData);
+    }
+
+    private BamFlagStats createTestBamFlagStats()
+    {
+        return ImmutableBamFlagStats.builder()
+                .uniqueReadCount(0)
+                .secondaryCount(0)
+                .supplementaryCount(0)
+                .duplicateProportion(0.0)
+                .mappedProportion(0.0)
+                .pairedInSequencingProportion(0.0)
+                .properlyPairedProportion(0.0)
+                .withItselfAndMateMappedProportion(0.0)
+                .singletonProportion(0.0)
+                .build();
     }
 }

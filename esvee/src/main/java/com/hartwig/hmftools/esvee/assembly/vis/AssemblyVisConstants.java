@@ -9,9 +9,10 @@ public final class AssemblyVisConstants
 
     // config
     public static final String VIS_DIR = "vis";
-    public static final int VIEW_REGION_SIZE = 70;
+    public static final int VIEW_REGION_SIZE = 500;
     public static final int DISPLAY_EVERY_NTH_COORD = 10;
 
     // debug flags
     public static final boolean INDEL_CORRECTION = true;
+    public static final boolean DBG_READ_INFO = false;
 }

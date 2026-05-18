@@ -39,7 +39,7 @@ public class ComparTestUtil
         Mismatch detailedMismatch = refVictim.findMismatch(newVictim, matchLevel, diffThresholds, false);
 
         assertEquals(testMessage, expectedMismatchType, detailedMismatch.Type);
-        assertEquals(testMessage, refVictim, detailedMismatch.RefItem);
+        assertEquals(testMessage, refVictim, detailedMismatch.OldItem);
         assertEquals(testMessage, newVictim, detailedMismatch.NewItem);
         assertEquals(testMessage, 1, detailedMismatch.DiffValues.size());
         assertEquals(testMessage, field, extractFieldNameFromDifference(detailedMismatch.DiffValues.get(0)));
@@ -51,17 +51,17 @@ public class ComparTestUtil
     {
         if(expectIndexMatch)
         {
-            assertTrue(refVictim.matches(newVictim));
+            assertTrue("Test ref.matches(new) is True", refVictim.matches(newVictim));
         }
         else
         {
-            assertFalse(refVictim.matches(newVictim));
+            assertFalse("Test ref.matches(new) is False", refVictim.matches(newVictim));
         }
 
         Mismatch mismatch = refVictim.findMismatch(newVictim, matchLevel, diffThresholds, false);
 
         assertEquals(MismatchType.VALUE, mismatch.Type);
-        assertEquals(refVictim, mismatch.RefItem);
+        assertEquals(refVictim, mismatch.OldItem);
         assertEquals(newVictim, mismatch.NewItem);
 
         assertDifferencesAreForFields(expectedFieldNames, mismatch.DiffValues);

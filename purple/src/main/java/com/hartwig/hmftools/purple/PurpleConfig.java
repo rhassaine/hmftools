@@ -35,20 +35,25 @@ public class PurpleConfig
     public final ChartConfig Charting;
     public final boolean TargetRegionsMode;
     public final boolean IgnorePlotErrors;
+    public final int SvQualFilter;
     public final int Threads;
 
     // debug only
-    public final boolean FilterSomaticsOnGene;
     public final boolean WriteAllSomatics;
+    public final boolean SkipCircosGenes;
     public final SpecificRegions SpecificChrRegions;
 
     private boolean mIsValid;
 
     public static final String SAMPLE_DIR = "sample_dir";
 
-    public static String FILTER_SOMATICS_ON_GENE = "filter_somatics_on_gene";
     public static final String WRITE_ALL_SOMATICS = "write_all_somatics";
     public static final String IGNORE_PLOT_ERRORS = "ignore_plot_errors";
+    public static final String SKIP_CIRCOS_GENES = "skip_circos_genes";
+    public static final String SV_QUAL_FILTER = "sv_qual_filter";
+
+    private static final String OLD_AMBER_PCF_SEGMENTATION = "old_amber_baf_seg";
+    public static boolean OldAmberPcfSegmentation = false;
 
     public PurpleConfig(final String version, final ConfigBuilder configBuilder)
     {
@@ -103,8 +108,13 @@ public class PurpleConfig
         Threads = parseThreads(configBuilder);
 
         RunDrivers = DriverGenePanelConfig.isConfigured(configBuilder);
-        FilterSomaticsOnGene = configBuilder.hasFlag(FILTER_SOMATICS_ON_GENE);
         IgnorePlotErrors = configBuilder.hasFlag(IGNORE_PLOT_ERRORS);
+        SkipCircosGenes = configBuilder.hasFlag(SKIP_CIRCOS_GENES);
+        SvQualFilter = configBuilder.getInteger(SV_QUAL_FILTER);
+
+        if(configBuilder.hasFlag(OLD_AMBER_PCF_SEGMENTATION))
+            OldAmberPcfSegmentation = true;
+
         WriteAllSomatics = configBuilder.hasFlag(WRITE_ALL_SOMATICS);
 
         SpecificChrRegions = SpecificRegions.from(configBuilder);
@@ -150,8 +160,10 @@ public class PurpleConfig
                 "Path to the output directory. If <sample_dir> is set, then is sample_dir/output_dir/.");
 
         configBuilder.addFlag(WRITE_ALL_SOMATICS, "Write all variants regardless of filters");
-        configBuilder.addFlag(FILTER_SOMATICS_ON_GENE, "Only load and enrich somatic variants with a gene impact");
         configBuilder.addFlag(IGNORE_PLOT_ERRORS, "Run to completion if plotting fails");
+        configBuilder.addFlag(SKIP_CIRCOS_GENES, "Skip plotting driver genes on Circos");
+        configBuilder.addFlag(OLD_AMBER_PCF_SEGMENTATION, "Debug: revert to old Amber PCF segmentation");
+        configBuilder.addInteger(SV_QUAL_FILTER, "Min SV qual, 0 is disabled", 0);
 
         FittingConfig.addConfig(configBuilder);
         SomaticFitConfig.addConfig(configBuilder);

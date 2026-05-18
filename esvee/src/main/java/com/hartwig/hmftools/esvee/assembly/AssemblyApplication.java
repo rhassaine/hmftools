@@ -11,12 +11,12 @@ import static com.hartwig.hmftools.esvee.assembly.AssemblyConstants.BAM_READ_JUN
 import static com.hartwig.hmftools.esvee.assembly.AssemblyConstants.DISC_RATE_DISC_ONLY_INCREMENT;
 import static com.hartwig.hmftools.esvee.assembly.AssemblyConstants.DISC_RATE_JUNC_INCREMENT;
 import static com.hartwig.hmftools.esvee.assembly.AssemblyConstants.MAX_OBSERVED_CONCORDANT_FRAG_LENGTH;
-import static com.hartwig.hmftools.esvee.assembly.alignment.Alignment.skipUnlinkedJunctionAssembly;
 import static com.hartwig.hmftools.esvee.assembly.AssemblyUtils.setAssemblyOutcome;
+import static com.hartwig.hmftools.esvee.assembly.alignment.Alignment.skipUnlinkedJunctionAssembly;
 import static com.hartwig.hmftools.esvee.assembly.types.AssemblyOutcome.DECOY;
+import static com.hartwig.hmftools.esvee.assembly.types.JunctionGroup.buildJunctionGroups;
 import static com.hartwig.hmftools.esvee.assembly.types.ThreadTask.mergePerfCounters;
 import static com.hartwig.hmftools.esvee.common.FileCommon.APP_NAME;
-import static com.hartwig.hmftools.esvee.assembly.types.JunctionGroup.buildJunctionGroups;
 import static com.hartwig.hmftools.esvee.common.FileCommon.formDiscordantStatsFilename;
 import static com.hartwig.hmftools.esvee.common.FileCommon.formFragmentLengthDistFilename;
 import static com.hartwig.hmftools.esvee.common.WriteType.ASSEMBLY_READ;
@@ -45,25 +45,25 @@ import com.hartwig.hmftools.esvee.assembly.alignment.Alignment;
 import com.hartwig.hmftools.esvee.assembly.alignment.AssemblyAlignment;
 import com.hartwig.hmftools.esvee.assembly.alignment.Breakend;
 import com.hartwig.hmftools.esvee.assembly.alignment.BwaAligner;
-import com.hartwig.hmftools.esvee.assembly.output.BreakendWriter;
-import com.hartwig.hmftools.esvee.assembly.types.PhaseSet;
-import com.hartwig.hmftools.esvee.assembly.vis.AssemblyVisualiser;
-import com.hartwig.hmftools.esvee.common.FragmentLengthBounds;
 import com.hartwig.hmftools.esvee.assembly.output.AssemblyReadWriter;
 import com.hartwig.hmftools.esvee.assembly.output.AssemblyWriter;
+import com.hartwig.hmftools.esvee.assembly.output.BreakendWriter;
+import com.hartwig.hmftools.esvee.assembly.output.ResultsWriter;
+import com.hartwig.hmftools.esvee.assembly.output.VcfWriter;
 import com.hartwig.hmftools.esvee.assembly.phase.PhaseGroupBuilder;
 import com.hartwig.hmftools.esvee.assembly.phase.PhaseSetTask;
-import com.hartwig.hmftools.esvee.common.WriteType;
-import com.hartwig.hmftools.esvee.prep.FragmentSizeDistribution;
+import com.hartwig.hmftools.esvee.assembly.read.BamReader;
+import com.hartwig.hmftools.esvee.assembly.read.ReadStats;
 import com.hartwig.hmftools.esvee.assembly.types.Junction;
 import com.hartwig.hmftools.esvee.assembly.types.JunctionAssembly;
 import com.hartwig.hmftools.esvee.assembly.types.JunctionGroup;
 import com.hartwig.hmftools.esvee.assembly.types.PhaseGroup;
+import com.hartwig.hmftools.esvee.assembly.types.PhaseSet;
 import com.hartwig.hmftools.esvee.assembly.types.ThreadTask;
-import com.hartwig.hmftools.esvee.assembly.output.ResultsWriter;
-import com.hartwig.hmftools.esvee.assembly.read.BamReader;
-import com.hartwig.hmftools.esvee.assembly.output.VcfWriter;
-import com.hartwig.hmftools.esvee.assembly.read.ReadStats;
+import com.hartwig.hmftools.esvee.assembly.vis.AssemblyVisualiser;
+import com.hartwig.hmftools.esvee.common.FragmentLengthBounds;
+import com.hartwig.hmftools.esvee.common.WriteType;
+import com.hartwig.hmftools.esvee.prep.FragmentSizeDistribution;
 import com.hartwig.hmftools.esvee.prep.types.DiscordantStats;
 
 public class AssemblyApplication
@@ -186,6 +186,12 @@ public class AssemblyApplication
             return true;
         }
 
+        if(mConfig.JunctionFile == null || !Files.exists(Paths.get(mConfig.JunctionFile)))
+        {
+            SV_LOGGER.error("invalid junction file({})", mConfig.JunctionFile);
+            System.exit(1);
+        }
+
         String discStatsFilename = formDiscordantStatsFilename(mConfig.PrepDir, mConfig.sampleId(), mConfig.OutputId);
         DiscordantStats discordantStats = loadDiscordantStats(discStatsFilename);
 
@@ -205,24 +211,11 @@ public class AssemblyApplication
                     minHotspotFrags, minJunctionFrags, minDiscordantFrags, format("%.3f", discordantRate));
         }
 
-        for(String junctionFile : mConfig.JunctionFiles)
-        {
-            Map<String,List<Junction>> newJunctionsMap = Junction.loadJunctions(
-                    junctionFile, mConfig.SpecificChrRegions, minJunctionFrags, minHotspotFrags, minDiscordantFrags);
-
-            if(newJunctionsMap == null)
-                return false;
-
-            Junction.mergeJunctions(mChrJunctionsMap, newJunctionsMap);
-        }
+        mChrJunctionsMap.putAll(Junction.loadJunctions(
+                mConfig.JunctionFile, mConfig.SpecificChrRegions, minJunctionFrags, minHotspotFrags, minDiscordantFrags));
 
         // if(AssemblyConfig.DevDebug && !validateJunctionMap(mChrJunctionsMap))
         //    System.exit(1);
-
-        if(mConfig.JunctionFiles.size() > 1)
-        {
-            SV_LOGGER.debug("merged into {} junctions", mChrJunctionsMap.values().stream().mapToInt(x -> x.size()).sum());
-        }
 
         return true;
     }
@@ -451,8 +444,18 @@ public class AssemblyApplication
     {
         for(AssemblyAlignment assembly : assemblyAlignments)
         {
-            AssemblyVisualiser visualiser = new AssemblyVisualiser(mConfig, assembly);
-            visualiser.writeVisFiles();
+            // TODO(mkcmkc): This try/catch is temporary to catch assemblies where the vis fails
+            try
+            {
+                AssemblyVisualiser visualiser = AssemblyVisualiser.create(mConfig, assembly);
+                if(visualiser != null)
+                    visualiser.writeVisFile();
+            }
+            catch(Exception e)
+            {
+                SV_LOGGER.debug("EsveeVis failed for assemblyAlignments({})", assemblyAlignments.toString());
+                e.printStackTrace();
+            }
         }
     }
 

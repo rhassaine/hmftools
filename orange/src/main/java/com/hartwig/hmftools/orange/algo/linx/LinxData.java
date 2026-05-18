@@ -2,8 +2,8 @@ package com.hartwig.hmftools.orange.algo.linx;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
+import com.hartwig.hmftools.common.driver.DriverCatalog;
 import com.hartwig.hmftools.common.linx.LinxBreakend;
 import com.hartwig.hmftools.common.linx.LinxDriver;
 import com.hartwig.hmftools.common.linx.LinxFusion;
@@ -22,16 +22,28 @@ public interface LinxData
     List<LinxSvAnnotation> somaticSvAnnotations(); // used in interpreter to form final LinxBreakend info
 
     @NotNull
-    List<LinxDriver> somaticDrivers();
+    List<LinxDriver> somaticDriverData();
+
+    @NotNull
+    List<DriverCatalog> somaticDrivers();
 
     @NotNull
     List<LinxFusion> fusions();
 
     @NotNull
+    Map<LinxFusion,Integer> fusionClusterIds();
+
+    @NotNull
     List<LinxBreakend> somaticBreakends();
 
     @NotNull
-    List<HomozygousDisruption> somaticHomozygousDisruptions();
+    Map<LinxBreakend,Integer> somaticBreakendClusterIds();
+
+    @NotNull
+    List<DriverCatalog> somaticHomozygousDisruptions();
+
+    @Nullable
+    List<DriverCatalog> germlineDrivers();
 
     @Nullable
     List<LinxBreakend> germlineBreakends();
@@ -40,20 +52,8 @@ public interface LinxData
     List<LinxGermlineDisruption> germlineDisruptions();
 
     @Nullable
-    List<HomozygousDisruption> germlineHomozygousDisruptions();
-
-    @Nullable
     List<LinxSvAnnotation> germlineSvAnnotations();
 
     @NotNull
-    Set<Integer> fusionClusterIds();
-
-    @NotNull
-    Map<Integer, Integer> svIdToClusterId();
-
-    @NotNull
-    Map<Integer, Integer> clusterIdToLinkCount();
-
-    @NotNull
-    Map<Integer, Integer> clusterIdToExonCount();
+    List<String> reportableEventPlots();
 }

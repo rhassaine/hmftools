@@ -17,24 +17,26 @@ import com.hartwig.hmftools.common.genome.gc.GCBucket;
 import com.hartwig.hmftools.qsee.feature.FeatureKey;
 import com.hartwig.hmftools.qsee.feature.FeatureType;
 import com.hartwig.hmftools.qsee.feature.Feature;
+import com.hartwig.hmftools.qsee.common.MultiFieldStringBuilder;
 import com.hartwig.hmftools.qsee.feature.SourceTool;
 import com.hartwig.hmftools.qsee.prep.CategoryPrep;
-import com.hartwig.hmftools.qsee.prep.CommonPrepConfig;
+import com.hartwig.hmftools.qsee.prep.QseePrepConfig;
 
 public class GcBiasPrep implements CategoryPrep
 {
-    private final CommonPrepConfig mConfig;
+    private final QseePrepConfig mConfig;
 
     private static final SourceTool SOURCE_TOOL = SourceTool.COBALT;
 
     private static final String FIELD_GC_BUCKET = "GCBucket";
 
-    public GcBiasPrep(CommonPrepConfig config)
+    public GcBiasPrep(QseePrepConfig config)
     {
         mConfig = config;
     }
 
     public SourceTool sourceTool() { return SourceTool.COBALT; }
+    public PrepCategory category() { return PrepCategory.GC_BIAS; }
 
     private GcMedianReadDepth loadCobaltGcMedianFile(String sampleId) throws IOException
     {
@@ -75,7 +77,7 @@ public class GcBiasPrep implements CategoryPrep
 
             double normalisedDepth = medianReadDepth / overallMedianReadDepth;
 
-            String featureName = FeatureKey.formSingleFieldName(FIELD_GC_BUCKET, String.valueOf(bucket.bucket()));
+            String featureName = MultiFieldStringBuilder.formSingleField(FIELD_GC_BUCKET, String.valueOf(bucket.bucket()));
             FeatureKey key = new FeatureKey(featureName, FeatureType.GC_BIAS, SOURCE_TOOL);
             Feature feature = new Feature(key, normalisedDepth);
 

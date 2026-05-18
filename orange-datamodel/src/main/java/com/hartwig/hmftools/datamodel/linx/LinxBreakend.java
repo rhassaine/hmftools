@@ -15,11 +15,13 @@ import org.jetbrains.annotations.Nullable;
 public interface LinxBreakend
 {
     int id();
-
     int svId();
+    int clusterId();
 
     @NotNull
     String gene();
+    int position();
+    int orientation();
 
     @NotNull
     String chromosome();
@@ -52,11 +54,16 @@ public interface LinxBreakend
 
     int nextSpliceExonRank();
 
-    int orientation();
-
     int exonUp();
 
     int exonDown();
 
     double junctionCopyNumber();
+
+    @NotNull
+    LinxDriverType driverType();
+    double driverLikelihood();
+
+    @Nullable
+    String plotFilename();
 }

@@ -2,6 +2,19 @@ package com.hartwig.hmftools.purple;
 
 import static com.hartwig.hmftools.common.pipeline.PipelineToolDirectories.PIPELINE_FORMAT_CFG;
 import static com.hartwig.hmftools.common.pipeline.PipelineToolDirectories.PIPELINE_FORMAT_FILE_CFG;
+import static com.hartwig.hmftools.common.pipeline.PipelineToolDirectoriesFile.COBALT_DIR;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.AMBER_DIR_CFG;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.AMBER_DIR_DESC;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.COBALT_DIR_CFG;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.COBALT_DIR_DESC;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.ESVEE_DIR_CFG;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.ESVEE_DIR_DESC;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.PAVE_GERMLINE_DIR_CFG;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.PAVE_GERMLINE_DIR_DESC;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.PAVE_SOMATIC_DIR_CFG;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.PAVE_SOMATIC_DIR_DESC;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.REDUX_TUMOR_DIR_CFG;
+import static com.hartwig.hmftools.common.utils.config.CommonConfig.REDUX_TUMOR_DIR_DESC;
 import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.checkAddDirSeparator;
 import static com.hartwig.hmftools.purple.PurpleUtils.PPL_LOGGER;
 
@@ -23,30 +36,38 @@ public class SampleDataFiles
     public final String GermlineVcfFile;
     public final String AmberDirectory;
     public final String CobaltDirectory;
+    public final String ReduxTumorDirectory;
 
     public static final String SAMPLE_DIR = "sample_dir";
-    public static final String AMBER = "amber";
-    public static final String COBALT = "cobalt";
     public static final String SOMATIC_SV_VCF = "somatic_sv_vcf";
     public static final String GERMLINE_SV_VCF = "germline_sv_vcf";
     public static final String GERMLINE_VARIANTS = "germline_vcf";
     public static final String SOMATIC_VARIANTS = "somatic_vcf";
+
+    @Deprecated
+    private static final String AMBER = "amber";
+    private static final String COBALT = "cobalt";
 
     static void addConfig(final ConfigBuilder configBuilder)
     {
         configBuilder.addPath(SAMPLE_DIR, false,
                 "Sample data directory containing Cobalt, Amber, Pave and Esvee files");
 
-        configBuilder.addPath(COBALT, false,
-                "Cobalt directory - required if <run_dir> not set, otherwise defaults to <run_dir>/cobalt");
+        configBuilder.addPath(COBALT_DIR_CFG, false, COBALT_DIR_DESC);
+        configBuilder.addPath(COBALT, false, COBALT_DIR_DESC + " deprecated, use: " + COBALT_DIR_CFG);
 
-        configBuilder.addPath(AMBER, false,
-                "Amber directory - required if <run_dir> not set, otherwise defaults to <run_dir>/amber");
+        configBuilder.addPath(AMBER, false, AMBER_DIR_DESC + " deprecated, use: " + AMBER_DIR_CFG);
+        configBuilder.addPath(AMBER_DIR_CFG, false, AMBER_DIR_DESC);
+
+        configBuilder.addPath(ESVEE_DIR_CFG, false, ESVEE_DIR_DESC);
+        configBuilder.addPath(PAVE_SOMATIC_DIR_CFG, false, PAVE_SOMATIC_DIR_DESC);
+        configBuilder.addPath(PAVE_GERMLINE_DIR_CFG, false, PAVE_GERMLINE_DIR_DESC);
 
         configBuilder.addPath(SOMATIC_SV_VCF, false, "Somatic SV VCF");
         configBuilder.addPath(GERMLINE_SV_VCF, false, "Germline SV VCF to annotate");
         configBuilder.addPath(GERMLINE_VARIANTS, false, "Germline variant VCF");
         configBuilder.addPath(SOMATIC_VARIANTS, false, "Somatic variant VCF");
+        configBuilder.addPath(REDUX_TUMOR_DIR_CFG, false, REDUX_TUMOR_DIR_DESC);
 
         PipelineToolDirectories.addPipelineFormatOptions(configBuilder);
     }
@@ -58,7 +79,11 @@ public class SampleDataFiles
         PipelineToolDirectories pipelineToolDirectories = PipelineToolDirectories.resolveToolDirectories(
                 configBuilder, PIPELINE_FORMAT_CFG, PIPELINE_FORMAT_FILE_CFG);
 
-        if(configBuilder.hasValue(AMBER))
+        if(configBuilder.hasValue(AMBER_DIR_CFG))
+        {
+            AmberDirectory = checkAddDirSeparator(configBuilder.getValue(AMBER_DIR_CFG));
+        }
+        else if(configBuilder.hasValue(AMBER))
         {
             AmberDirectory = checkAddDirSeparator(configBuilder.getValue(AMBER));
         }
@@ -71,7 +96,11 @@ public class SampleDataFiles
             AmberDirectory = null;
         }
 
-        if(configBuilder.hasValue(COBALT))
+        if(configBuilder.hasValue(COBALT_DIR_CFG))
+        {
+            CobaltDirectory = checkAddDirSeparator(configBuilder.getValue(COBALT_DIR_CFG));
+        }
+        else if(configBuilder.hasValue(COBALT))
         {
             CobaltDirectory = checkAddDirSeparator(configBuilder.getValue(COBALT));
         }
@@ -84,17 +113,19 @@ public class SampleDataFiles
             CobaltDirectory = null;
         }
 
-        SomaticSvVcfFile = getFilename(
-                configBuilder, SOMATIC_SV_VCF, pipelineToolDirectories.esveeDir(), sampleId, ".esvee.somatic.vcf.gz");
+        SomaticSvVcfFile = getFilename(configBuilder, SOMATIC_SV_VCF, ESVEE_DIR_CFG,
+                pipelineToolDirectories.esveeDir(), sampleId, ".esvee.somatic.vcf.gz");
 
-        GermlineSvVcfFile = getFilename(
-                configBuilder, GERMLINE_SV_VCF, pipelineToolDirectories.esveeDir(), sampleId, ".esvee.germline.vcf.gz");
+        GermlineSvVcfFile = getFilename(configBuilder, GERMLINE_SV_VCF, ESVEE_DIR_CFG,
+                pipelineToolDirectories.esveeDir(), sampleId, ".esvee.germline.vcf.gz");
 
-        SomaticVcfFile = getFilename(
-                configBuilder, SOMATIC_VARIANTS, pipelineToolDirectories.paveSomaticDir(), sampleId, ".pave.somatic.vcf.gz");
+        SomaticVcfFile = getFilename(configBuilder, SOMATIC_VARIANTS, PAVE_SOMATIC_DIR_CFG,
+                pipelineToolDirectories.paveSomaticDir(), sampleId, ".pave.somatic.vcf.gz");
 
-        GermlineVcfFile = getFilename(
-                configBuilder, GERMLINE_VARIANTS, pipelineToolDirectories.paveGermlineDir(), sampleId, ".pave.germline.vcf.gz");
+        GermlineVcfFile = getFilename(configBuilder, GERMLINE_VARIANTS, PAVE_GERMLINE_DIR_CFG,
+                pipelineToolDirectories.paveGermlineDir(), sampleId, ".pave.germline.vcf.gz");
+
+        ReduxTumorDirectory = configBuilder.getValue(REDUX_TUMOR_DIR_CFG);
     }
 
     public boolean hasValidSampleNames(final PurpleConfig config)
@@ -135,11 +166,12 @@ public class SampleDataFiles
     }
 
     private String getFilename(
-            final ConfigBuilder configBuilder, final String config, final String toolDir, final String sampleId, final String fileSuffix)
+            final ConfigBuilder configBuilder, final String filePathConfig, final String toolDirConfig,
+            final String pipelineToolDir, final String sampleId, final String fileSuffix)
     {
-        if(configBuilder.hasValue(config))
+        if(configBuilder.hasValue(filePathConfig))
         {
-            final String filename = configBuilder.getValue(config);
+            final String filename = configBuilder.getValue(filePathConfig);
 
             if(Files.exists(Paths.get(filename)))
             {
@@ -150,20 +182,37 @@ public class SampleDataFiles
             return null;
         }
 
-        if(SampleDataDir == null)
+        final String baseDir;
+        if(configBuilder.hasValue(toolDirConfig))
+        {
+            baseDir = checkAddDirSeparator(configBuilder.getValue(toolDirConfig));
+        }
+        else if(SampleDataDir != null)
+        {
+            baseDir = checkAddDirSeparator(SampleDataDir) + checkAddDirSeparator(pipelineToolDir);
+        }
+        else
         {
             return "";
         }
 
-        String filename = SampleDataDir + toolDir + File.separator + sampleId + fileSuffix;
+        String filename = baseDir + sampleId + fileSuffix;
 
         if(Files.exists(Paths.get(filename)))
-        {
             return filename;
-        }
+
+        // handle earlier pave formats, for conveniences only
+        if(pipelineToolDir.contains(GERMLINE_SUB_DIR) && Files.exists(Paths.get(filename.replaceFirst(GERMLINE_SUB_DIR, ""))))
+            return filename.replaceFirst(GERMLINE_SUB_DIR, "");
+
+        if(pipelineToolDir.contains(SOMATIC_SUB_DIR) && Files.exists(Paths.get(filename.replaceFirst(SOMATIC_SUB_DIR, ""))))
+            return filename.replaceFirst(SOMATIC_SUB_DIR, "");
 
         filename = SampleDataDir + sampleId + fileSuffix;
 
         return Files.exists(Paths.get(filename)) ? filename : "";
     }
+
+    private static String GERMLINE_SUB_DIR = "/germline";
+    private static String SOMATIC_SUB_DIR = "/somatic";
 }

@@ -21,7 +21,7 @@ import com.hartwig.hmftools.isofox.adjusts.GcRatioCounts;
 import com.hartwig.hmftools.isofox.common.FragmentMatchType;
 import com.hartwig.hmftools.isofox.common.GeneCollection;
 import com.hartwig.hmftools.isofox.common.GeneReadData;
-import com.hartwig.hmftools.isofox.common.ReadRecord;
+import com.hartwig.hmftools.isofox.common.Read;
 import com.hartwig.hmftools.isofox.common.RegionReadData;
 
 public class ExpressionReadTracker
@@ -66,7 +66,7 @@ public class ExpressionReadTracker
         if(!mEnabled)
             return;
 
-        List<String> unsplicedGeneIds = overlapGenes.stream().map(x -> x.GeneData.GeneId).collect(Collectors.toList());
+        List<String> unsplicedGeneIds = overlapGenes.stream().map(x -> x.Gene.GeneId).collect(Collectors.toList());
 
         if(!unsplicedGeneIds.isEmpty())
         {
@@ -83,18 +83,18 @@ public class ExpressionReadTracker
             return;
 
         List<String> unsplicedGeneIds = comboTransMatchType == FragmentMatchType.SHORT ?
-                overlapGenes.stream().map(x -> x.GeneData.GeneId).collect(Collectors.toList()) : Lists.newArrayList();
+                overlapGenes.stream().map(x -> x.Gene.GeneId).collect(Collectors.toList()) : Lists.newArrayList();
 
         CategoryCountsData catCounts = getCategoryCountsData(validTranscripts, unsplicedGeneIds);
         addGcCounts(catCounts, commonMappings, minMapQuality);
     }
 
-    public void processIntronicReads(final List<GeneReadData> genes, final ReadRecord read1, final ReadRecord read2)
+    public void processIntronicReads(final List<GeneReadData> genes, final Read read1, final Read read2)
     {
         if(!mEnabled)
             return;
 
-        List<String> unsplicedGeneIds = genes.stream().map(x -> x.GeneData.GeneId).collect(Collectors.toList());
+        List<String> unsplicedGeneIds = genes.stream().map(x -> x.Gene.GeneId).collect(Collectors.toList());
 
         if(!unsplicedGeneIds.isEmpty())
         {
@@ -113,7 +113,7 @@ public class ExpressionReadTracker
         // add to category counts
         final int[] enrichedRegion = mGenes.getEnrichedRegion();
         final List<String> unsplicedGeneIds = mGenes.findGenesCoveringRange(enrichedRegion[SE_START], enrichedRegion[SE_END], true)
-                .stream().map(x -> x.GeneData.GeneId).collect(Collectors.toList());
+                .stream().map(x -> x.Gene.GeneId).collect(Collectors.toList());
 
         final List<Integer> transIds = mGenes.getEnrichedTranscripts().stream().map(x -> Integer.valueOf(x.TransId)).collect(Collectors.toList());
         CategoryCountsData catCounts = getCategoryCountsData(transIds, unsplicedGeneIds);
@@ -154,11 +154,11 @@ public class ExpressionReadTracker
     }
 
 
-    public void processValidTranscript(int transId, final List<ReadRecord> reads, boolean isUniqueTrans)
+    public void processValidTranscript(int transId, final List<Read> reads, boolean isUniqueTrans)
     {
         final List<RegionReadData> processedRegions = Lists.newArrayList();
 
-        for(ReadRecord read : reads)
+        for(Read read : reads)
         {
             List<RegionReadData> regions = read.getMappedRegions().entrySet().stream()
                     .filter(x -> x.getKey().hasTransId(transId))

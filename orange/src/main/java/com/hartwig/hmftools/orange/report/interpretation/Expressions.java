@@ -1,8 +1,6 @@
 package com.hartwig.hmftools.orange.report.interpretation;
 
-import static com.hartwig.hmftools.orange.OrangeApplication.LOGGER;
-import static com.hartwig.hmftools.orange.report.ReportResources.formatSingleDigitDecimal;
-import static com.hartwig.hmftools.orange.report.ReportResources.formatTwoDigitDecimal;
+import static com.hartwig.hmftools.orange.report.tables.TableCommon.formatFoldChangeField;
 
 import java.util.List;
 
@@ -10,13 +8,12 @@ import com.hartwig.hmftools.common.utils.Doubles;
 import com.hartwig.hmftools.datamodel.isofox.GeneExpression;
 import com.hartwig.hmftools.orange.report.ReportResources;
 
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public final class Expressions
 {
     @Nullable
-    public static GeneExpression findByGene(@NotNull List<GeneExpression> expressions, @NotNull String geneToFind)
+    public static GeneExpression findByGene(final List<GeneExpression> expressions, final String geneToFind)
     {
         for(GeneExpression expression : expressions)
         {
@@ -26,42 +23,20 @@ public final class Expressions
             }
         }
 
-        LOGGER.warn("Could not find expression data for gene '{}'", geneToFind);
         return null;
     }
 
-    @NotNull
-    public static String tpm(@NotNull GeneExpression expression)
+    public static String formatFoldChange(final GeneExpression expression)
     {
-        return formatSingleDigitDecimal(expression.tpm());
+        return toFoldChangeDisplay(expression.tpm(), expression.medianTpmCohort());
     }
 
-    @NotNull
-    public static String percentileType(@NotNull GeneExpression expression)
+    public static String formatFoldChangeCancer(final GeneExpression expression)
     {
-        return expression.percentileCancer() == null ? ReportResources.NOT_AVAILABLE : formatTwoDigitDecimal(expression.percentileCancer());
+        return toFoldChangeDisplay(expression.tpm(), expression.medianTpmCancer());
     }
 
-    @NotNull
-    public static String foldChangeType(@NotNull GeneExpression expression)
-    {
-        return toFoldChange(expression.tpm(), expression.medianTpmCancer());
-    }
-
-    @NotNull
-    public static String percentileDatabase(@NotNull GeneExpression expression)
-    {
-        return formatTwoDigitDecimal(expression.percentileCohort());
-    }
-
-    @NotNull
-    public static String foldChangeDatabase(@NotNull GeneExpression expression)
-    {
-        return toFoldChange(expression.tpm(), expression.medianTpmCohort());
-    }
-
-    @NotNull
-    private static String toFoldChange(double expression, @Nullable Double median)
+    private static String toFoldChangeDisplay(double expression, @Nullable Double median)
     {
         if(median == null || Doubles.lessOrEqual(median, 0))
         {
@@ -69,6 +44,6 @@ public final class Expressions
         }
 
         double foldChange = expression / median;
-        return foldChange > 1000 ? ">1000" : formatSingleDigitDecimal(foldChange);
+        return formatFoldChangeField(foldChange);
     }
 }

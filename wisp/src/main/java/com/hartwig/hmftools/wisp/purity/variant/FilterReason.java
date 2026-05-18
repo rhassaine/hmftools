@@ -2,7 +2,6 @@ package com.hartwig.hmftools.wisp.purity.variant;
 
 public enum FilterReason
 {
-    NO_FILTER,
     NO_PASS,
     GERMLINE_AF,
     NEARBY_INDEL,
@@ -14,5 +13,6 @@ public enum FilterReason
     GC_RATIO,
     LOW_QUAL_PER_AD,
     AVG_EDGE_DIST,
-    OUTLIER;
+    OUTLIER,
+    DUAL_ERROR_RATE;
 }

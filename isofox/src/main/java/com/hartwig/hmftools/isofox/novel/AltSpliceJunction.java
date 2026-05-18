@@ -1,9 +1,9 @@
 package com.hartwig.hmftools.isofox.novel;
 
-import static java.lang.Math.max;
-import static java.lang.Math.min;
-
 import static com.hartwig.hmftools.common.region.BaseRegion.positionWithin;
+import static com.hartwig.hmftools.common.utils.file.CommonFields.FLD_GENE_ID;
+import static com.hartwig.hmftools.common.utils.file.FileDelimiters.ITEM_DELIM;
+import static com.hartwig.hmftools.common.utils.file.FileDelimiters.TSV_DELIM;
 import static com.hartwig.hmftools.isofox.common.CommonUtils.SP_SEQ_ACCEPTOR;
 import static com.hartwig.hmftools.isofox.common.CommonUtils.SP_SEQ_DONOR_1;
 import static com.hartwig.hmftools.isofox.common.CommonUtils.SP_SEQ_DONOR_2;
@@ -18,17 +18,21 @@ import static com.hartwig.hmftools.common.rna.AltSpliceJunctionContext.MIXED;
 import static com.hartwig.hmftools.common.rna.AltSpliceJunctionType.CIRCULAR;
 
 import java.util.List;
+import java.util.Set;
 import java.util.StringJoiner;
 import java.util.stream.Collectors;
 
 import com.google.common.collect.Lists;
-import com.hartwig.hmftools.common.gene.GeneData;
+import com.google.common.collect.Sets;
 import com.hartwig.hmftools.common.genome.refgenome.RefGenomeInterface;
 import com.hartwig.hmftools.common.rna.AltSpliceJunctionContext;
-import com.hartwig.hmftools.common.rna.AltSpliceJunctionFile;
 import com.hartwig.hmftools.common.rna.AltSpliceJunctionType;
+import com.hartwig.hmftools.common.rna.ImmutableNovelSpliceJunction;
+import com.hartwig.hmftools.common.rna.NovelSpliceJunction;
+import com.hartwig.hmftools.common.rna.NovelSpliceJunctionFile;
 import com.hartwig.hmftools.isofox.common.GeneReadData;
 import com.hartwig.hmftools.isofox.common.RegionReadData;
+import com.hartwig.hmftools.isofox.common.TransExonRef;
 
 public class AltSpliceJunction
 {
@@ -46,6 +50,10 @@ public class AltSpliceJunction
     private final List<Integer> mCandidateTransIds;
 
     private String mGeneId; // associated gene if known or prioritised from amongst a set of candidates
+    private String mGeneName;
+
+    private final String[] mSelectedTranscripts;
+    private final int[] mSelectedExons;
 
     // calculated values
     private final String[] mTranscriptNames;
@@ -53,7 +61,9 @@ public class AltSpliceJunction
     private String mDonorAcceptorBases;
     private final int[] mNearestExonDistance;
 
+    private int mCohortFrequency;
     private final String mInitialReadId;
+    private final Set<AltSjFilterType> mFilters;
 
     public AltSpliceJunction(
             final String chromosome, final int[] spliceJunction, AltSpliceJunctionType type, final String initialReadId,
@@ -68,6 +78,7 @@ public class AltSpliceJunction
 
         mCandidateTransIds = Lists.newArrayList();
         mGeneId = null;
+        mGeneName = null;
         mInitialReadId = initialReadId;
 
         mType = type;
@@ -78,6 +89,11 @@ public class AltSpliceJunction
         mBaseContext = new String[SE_PAIR];
         mNearestExonDistance = new int[SE_PAIR];
         mDonorAcceptorBases = "";
+
+        mSelectedTranscripts = new String[SE_PAIR];
+        mSelectedExons = new int[] {-1, -1};
+        mCohortFrequency = -1;
+        mFilters = Sets.newHashSet();
     }
 
     public boolean matches(final AltSpliceJunction other)
@@ -92,18 +108,38 @@ public class AltSpliceJunction
 
     public int length() { return SpliceJunction[SE_END] - SpliceJunction[SE_START]; }
 
-    public final List<RegionReadData> getSjStartRegions() { return mSjStartRegions; }
-    public final List<RegionReadData> getSjEndRegions() { return mSjEndRegions; }
+    public final List<RegionReadData> sjStartRegions() { return mSjStartRegions; }
+    public final List<RegionReadData> sjEndRegions() { return mSjEndRegions; }
 
-    public int getFragmentCount() { return mFragmentCount;}
+    public String[] transcriptNames() { return mTranscriptNames; }
+    public String[] selectedTranscripts() { return mSelectedTranscripts; }
+    public int[] selectedExons() { return mSelectedExons; }
+
+    public int fragmentCount() { return mFragmentCount;}
     public void addFragmentCount() { ++mFragmentCount;}
 
     public void addPositionCount(int seIndex, int count) { mPositionCounts[seIndex] += count; }
 
-    public String[] getTranscriptNames() { return mTranscriptNames; }
+    public void setGeneData(final String geneId, final String geneName)
+    {
+        mGeneId = geneId;
+        mGeneName = geneName;
+    }
 
-    public void setGeneId(final String geneId) { mGeneId = geneId; }
-    public final String getGeneId() { return mGeneId; }
+    public String geneId() { return mGeneId; }
+    public String geneName() { return mGeneName; }
+
+    public int cohortFrequency() { return mCohortFrequency; }
+    public void setCohortFrequency(int frequency) { mCohortFrequency = frequency; }
+
+    public Set<AltSjFilterType> filters() { return mFilters; }
+
+    public String filterStr()
+    {
+        return mFilters.isEmpty() ? "PASS" : mFilters.stream().map(x -> x.toString()).collect(Collectors.joining(ITEM_DELIM));
+    }
+
+    public void addFilter(final AltSjFilterType filter) { mFilters.add(filter); }
 
     public static final String ASJ_TRANS_NONE = "NONE";
 
@@ -111,7 +147,7 @@ public class AltSpliceJunction
     {
         for(int se = SE_START; se <= SE_END; ++se)
         {
-            final List<RegionReadData> regions = (se == SE_START) ? mSjStartRegions : mSjEndRegions;
+            List<RegionReadData> regions = (se == SE_START) ? mSjStartRegions : mSjEndRegions;
             mTranscriptNames[se] = regions.isEmpty() ? ASJ_TRANS_NONE : generateTranscriptNames(regions);
             mNearestExonDistance[se] = calcNearestExonBoundary(se, gene);
         }
@@ -132,10 +168,41 @@ public class AltSpliceJunction
         return transNames.toString();
     }
 
+    private void setTranscriptAndExon(final String[] transcripts, final int[] exons, final int seIndex, final List<RegionReadData> regions)
+    {
+        if(regions.isEmpty())
+            return;
+
+        for(RegionReadData regionReadData : regions)
+        {
+            for(TransExonRef transExonRef : regionReadData.getTransExonRefs())
+            {
+                if(transExonRef.isCanonical())
+                {
+                    transcripts[seIndex] = transExonRef.TransName;
+                    exons[seIndex] = transExonRef.ExonRank;
+                    return;
+                }
+            }
+        }
+
+        // set to any - could find one with most support
+        if(!regions.get(0).getTransExonRefs().isEmpty())
+        {
+            TransExonRef transExonRef = regions.get(0).getTransExonRefs().get(0);
+            transcripts[seIndex] = transExonRef.TransName;
+            exons[seIndex] = transExonRef.ExonRank;
+        }
+    }
+
     public int calcNearestExonBoundary(int seIndex, final GeneReadData gene)
     {
         if((seIndex == SE_START && !mSjStartRegions.isEmpty()) || (seIndex == SE_END && !mSjEndRegions.isEmpty()))
+        {
+            // an exact splice junction match - set transcript and exon, favouring canonical if matched
+            setTranscriptAndExon(mSelectedTranscripts, mSelectedExons, seIndex, seIndex == SE_START ? mSjStartRegions : mSjEndRegions);
             return 0;
+        }
 
         /* find distance to nearest splice acceptor or donor as follows:
             - 5' in intron - go back to last exon end
@@ -145,12 +212,13 @@ public class AltSpliceJunction
         */
 
         int position = SpliceJunction[seIndex];
-        boolean forwardStrand = gene.GeneData.Strand == 1;
+        boolean forwardStrand = gene.Gene.Strand == 1;
         boolean isFivePrime = (seIndex == SE_START) == forwardStrand;
         boolean isExonic = RegionContexts[seIndex].equals(EXONIC) || RegionContexts[seIndex].equals(MIXED);
         boolean searchForwards = (isFivePrime && isExonic) || (!isFivePrime && !isExonic);
 
         int nearestBoundary = 0;
+        RegionReadData nearestRegion = null;
 
         for(RegionReadData region : gene.getExonRegions())
         {
@@ -165,8 +233,13 @@ public class AltSpliceJunction
                     continue;
 
                 // will be negative
-                distance = (int)(searchForwards ? position - region.end() : region.start() - position);
-                nearestBoundary = nearestBoundary == 0 ? distance : max(distance, nearestBoundary);
+                distance = searchForwards ? position - region.end() : region.start() - position;
+
+                if(nearestBoundary == 0 || distance > nearestBoundary)
+                {
+                    nearestBoundary = distance;
+                    nearestRegion = region;
+                }
             }
             else
             {
@@ -177,9 +250,19 @@ public class AltSpliceJunction
                     continue;
 
                 // will be positive
-                distance = (int)(searchForwards ? region.start() - position : position - region.end());
-                nearestBoundary = nearestBoundary == 0 ? distance : min(distance, nearestBoundary);
+                distance = searchForwards ? region.start() - position : position - region.end();
+
+                if(nearestBoundary == 0 || distance < nearestBoundary)
+                {
+                    nearestBoundary = distance;
+                    nearestRegion = region;
+                }
             }
+        }
+
+        if(nearestRegion != null)
+        {
+            setTranscriptAndExon(mSelectedTranscripts, mSelectedExons, seIndex, List.of(nearestRegion));
         }
 
         return nearestBoundary;
@@ -269,16 +352,16 @@ public class AltSpliceJunction
 
     public void setCandidateTranscripts(final List<RegionReadData> candidateRegions)
     {
-        final List<Integer> validTransIds = Lists.newArrayList();
+        List<Integer> validTransIds = Lists.newArrayList();
 
         // if any splice junctions have been matched, restrict the set of transcripts (and by implication genes) to these only
         if(!mSjStartRegions.isEmpty() || !mSjEndRegions.isEmpty())
         {
-            for (int se = SE_START; se <= SE_END; ++se)
+            for(int se = SE_START; se <= SE_END; ++se)
             {
                 List<RegionReadData> sjRegions = se == SE_START ? mSjStartRegions : mSjEndRegions;
 
-                for (RegionReadData region : sjRegions)
+                for(RegionReadData region : sjRegions)
                 {
                     region.getTransExonRefs().stream().forEach(x -> validTransIds.add(x.TransId));
                 }
@@ -286,23 +369,23 @@ public class AltSpliceJunction
         }
         else
         {
-            for (RegionReadData region : candidateRegions)
+            for(RegionReadData region : candidateRegions)
             {
-                if (positionWithin(SpliceJunction[SE_START], region.start(), region.end())
+                if(positionWithin(SpliceJunction[SE_START], region.start(), region.end())
                         && positionWithin(SpliceJunction[SE_END], region.start(), region.end()))
                 {
                     validTransIds.addAll(region.getTransExonRefs().stream().map(x -> x.TransId).collect(Collectors.toList()));
                     continue;
                 }
 
-                if (positionWithin(SpliceJunction[SE_START], region.start(), region.end()))
+                if(positionWithin(SpliceJunction[SE_START], region.start(), region.end()))
                 {
                     // each transcript must be present in the next region to be valid
                     validTransIds.addAll(region.getTransExonRefs().stream().map(x -> x.TransId)
                             .filter(x -> region.getPostRegions().stream().anyMatch(y -> y.hasTransId(x))).collect(Collectors.toList()));
                 }
 
-                if (positionWithin(SpliceJunction[SE_END], region.start(), region.end()))
+                if(positionWithin(SpliceJunction[SE_END], region.start(), region.end()))
                 {
                     validTransIds.addAll(region.getTransExonRefs().stream().map(x -> x.TransId)
                             .filter(x -> region.getPreRegions().stream().anyMatch(y -> y.hasTransId(x))).collect(Collectors.toList()));
@@ -324,18 +407,67 @@ public class AltSpliceJunction
                 RegionContexts[SE_START], RegionContexts[SE_END], mType, mFragmentCount);
     }
 
-    public static String csvHeader()
+    // file output and conversion
+    public NovelSpliceJunction convert()
     {
-        return AltSpliceJunctionFile.csvHeader() + ",NearestStartExon,NearestEndExon,InitialReadId";
+        return ImmutableNovelSpliceJunction.builder()
+                .geneName(mGeneName)
+                .chromosome(Chromosome)
+                .junctionStart(SpliceJunction[SE_START])
+                .junctionEnd(SpliceJunction[SE_END])
+                .type(mType)
+                .transcriptStart(mSelectedTranscripts[SE_START] != null ? mSelectedTranscripts[SE_START] : "")
+                .transcriptEnd(mSelectedTranscripts[SE_END] != null ? mSelectedTranscripts[SE_END] : "")
+                .exonStart(mSelectedExons[SE_START])
+                .exonEnd(mSelectedExons[SE_END])
+                .fragmentCount(mFragmentCount)
+                .depthStart(mPositionCounts[SE_START])
+                .depthEnd(mPositionCounts[SE_END])
+                .regionStart(RegionContexts[SE_START])
+                .regionEnd(RegionContexts[SE_END])
+                .basesStart(mBaseContext[SE_START])
+                .basesEnd(mBaseContext[SE_END])
+                .cohortFrequency(mCohortFrequency)
+                .build();
     }
 
-    public String toCsv(final GeneData geneData)
-    {
-        AltSpliceJunctionFile asjFile = new AltSpliceJunctionFile(
-                mGeneId, geneData.GeneName, Chromosome, SpliceJunction, mType,
-                mFragmentCount, mPositionCounts, RegionContexts, mBaseContext, mTranscriptNames);
+    public static final String FLD_NEAREST_EXON_START = "NearestStartExon";
+    public static final String FLD_NEAREST_EXON_END = "NearestEndExon";
+    public static final String FLD_INIT_READ_ID = "InitialReadId";
+    public static final String FLD_TRANS_START = "TransStart";
+    public static final String FLD_TRANS_END = "TransEnd";
+    public static final String FLD_FILTER = "Filter";
 
-        return String.format("%s,%d,%d,%s",
-                asjFile.toCsv(), mNearestExonDistance[SE_START], mNearestExonDistance[SE_END], mInitialReadId);
+    public static String header()
+    {
+        StringJoiner sj = new StringJoiner(TSV_DELIM);
+
+        sj.add(FLD_GENE_ID);
+        sj.add(NovelSpliceJunctionFile.header());
+
+        sj.add(FLD_FILTER);
+        sj.add(FLD_TRANS_START);
+        sj.add(FLD_TRANS_END);
+        sj.add(FLD_NEAREST_EXON_START);
+        sj.add(FLD_NEAREST_EXON_END);
+        sj.add(FLD_INIT_READ_ID);
+
+        return sj.toString();
+    }
+
+    public String write(final NovelSpliceJunction novelSpliceJunction)
+    {
+        StringJoiner sj = new StringJoiner(TSV_DELIM);
+
+        sj.add(mGeneId);
+        sj.add(NovelSpliceJunctionFile.write(novelSpliceJunction));
+        sj.add(filterStr());
+        sj.add(mTranscriptNames[SE_START]);
+        sj.add(mTranscriptNames[SE_END]);
+        sj.add(String.valueOf(mNearestExonDistance[SE_START]));
+        sj.add(String.valueOf(mNearestExonDistance[SE_END]));
+        sj.add(mInitialReadId);
+
+        return sj.toString();
     }
 }

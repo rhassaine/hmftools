@@ -6,14 +6,14 @@ import static java.lang.Math.min;
 import static com.hartwig.hmftools.common.purple.FittedPurityMethod.NORMAL;
 import static com.hartwig.hmftools.common.purple.SegmentSupport.CENTROMERE;
 import static com.hartwig.hmftools.common.purple.SegmentSupport.TELOMERE;
+import static com.hartwig.hmftools.common.segmentation.Arm.P;
+import static com.hartwig.hmftools.common.segmentation.Arm.Q;
 import static com.hartwig.hmftools.common.sv.StartEndIterator.SE_END;
 import static com.hartwig.hmftools.common.sv.StartEndIterator.SE_START;
 import static com.hartwig.hmftools.common.purple.MicrosatelliteStatus.UNKNOWN;
 import static com.hartwig.hmftools.common.sv.StructuralVariantType.DUP;
 import static com.hartwig.hmftools.linx.LinxConfig.LNX_LOGGER;
 import static com.hartwig.hmftools.linx.analysis.SvUtilities.formatJcn;
-import static com.hartwig.hmftools.common.purple.ChromosomeArm.P_ARM;
-import static com.hartwig.hmftools.common.purple.ChromosomeArm.Q_ARM;
 
 import java.util.List;
 import java.util.Map;
@@ -22,7 +22,6 @@ import com.google.common.collect.Lists;
 import com.hartwig.hmftools.common.purple.Gender;
 import com.hartwig.hmftools.common.purple.FittedPurity;
 import com.hartwig.hmftools.common.purple.FittedPurityScore;
-import com.hartwig.hmftools.common.purple.ImmutableFittedPurity;
 import com.hartwig.hmftools.common.purple.ImmutableFittedPurityScore;
 import com.hartwig.hmftools.common.purple.ImmutablePurityContext;
 import com.hartwig.hmftools.common.purple.PurityContext;
@@ -58,13 +57,13 @@ public class CnSegmentBuilder
         // use SV breakend data to re-create the copy number segments
 
         final Map<String, List<SvCNData>> chrCnDataMap = cnDataLoader.getChrCnDataMap();
-        final Map<Integer,SvCNData[]> svIdCnDataMap = cnDataLoader.getSvIdCnDataMap();
+        final Map<Integer, SvCNData[]> svIdCnDataMap = cnDataLoader.getSvIdCnDataMap();
 
         chrCnDataMap.clear();
         svIdCnDataMap.clear();
 
         int cnId = 0;
-        for(final Map.Entry<String, List<SvBreakend>> entry : chrBreakendMap.entrySet())
+        for(Map.Entry<String, List<SvBreakend>> entry : chrBreakendMap.entrySet())
         {
             final String chromosome = entry.getKey();
             List<SvBreakend> breakendList = entry.getValue();
@@ -76,14 +75,14 @@ public class CnSegmentBuilder
 
             double currentCopyNumber = mOtherAlleleJcn + mUndisruptedAlleleJcn + netSvJcn;
 
-            int centromerePosition = SvUtilities.getChromosomalArmLength(chromosome, P_ARM);
+            int centromerePosition = SvUtilities.getChromosomalArmLength(chromosome, P);
             int chromosomeLength = SvUtilities.getChromosomeLength(chromosome);
 
             for(int i = 0; i < breakendList.size(); ++i)
             {
-                final SvBreakend breakend = breakendList.get(i);
-                final StructuralVariantData svData = breakend.getSV().getSvData();
-                final SvVarData var = breakend.getSV();
+                SvBreakend breakend = breakendList.get(i);
+                StructuralVariantData svData = breakend.getSV().getSvData();
+                SvVarData var = breakend.getSV();
                 double jcn = var.jcn();
 
                 double jcnChange = -jcn * breakend.orientation();
@@ -111,7 +110,7 @@ public class CnSegmentBuilder
                     double actualBaf = calcActualBaf(currentCopyNumber);
 
                     // add telomere segment at start, and centromere as soon as the breakend crosses the centromere
-                    if(breakend.arm() == Q_ARM)
+                    if(breakend.arm() == Q)
                     {
                         SvCNData extraCnData = new SvCNData(cnId++, chromosome, 0, centromerePosition,
                                 currentCopyNumber, TELOMERE.toString(), CENTROMERE.toString(),
@@ -154,9 +153,9 @@ public class CnSegmentBuilder
                 {
                     final SvBreakend nextBreakend = breakendList.get(i + 1);
 
-                    if(breakend.arm() == P_ARM && nextBreakend.arm() == Q_ARM)
+                    if(breakend.arm() == P && nextBreakend.arm() == Q)
                     {
-                        cnData = new SvCNData(cnId++, chromosome, breakend.position(), centromerePosition-1,
+                        cnData = new SvCNData(cnId++, chromosome, breakend.position(), centromerePosition - 1,
                                 currentCopyNumber, var.type().toString(), CENTROMERE.toString(),
                                 1, actualBaf, 100);
 
@@ -185,7 +184,7 @@ public class CnSegmentBuilder
                 else
                 {
                     // last breakend runs out to the telomere
-                    if(breakend.arm() == P_ARM)
+                    if(breakend.arm() == P)
                     {
                         cnData = new SvCNData(cnId++, chromosome, breakend.position(), centromerePosition - 1,
                                 currentCopyNumber,
@@ -236,14 +235,20 @@ public class CnSegmentBuilder
     private double calcActualBaf(double copyNumber)
     {
         if(copyNumber == 0)
+        {
             return 0;
+        }
 
         double bAlleleJcn = max(copyNumber - mOtherAlleleJcn, 0);
 
         if(bAlleleJcn >= mOtherAlleleJcn)
+        {
             return bAlleleJcn / copyNumber;
+        }
         else
+        {
             return mOtherAlleleJcn / copyNumber;
+        }
     }
 
     public void createGermlineCopyNumberData(final CnDataLoader cnDataLoader, final Map<String, List<SvBreakend>> chrBreakendMap)
@@ -251,7 +256,7 @@ public class CnSegmentBuilder
         // set copy number data for each breakend irrespective of the breakends around it
 
         final Map<String, List<SvCNData>> chrCnDataMap = cnDataLoader.getChrCnDataMap();
-        final Map<Integer,SvCNData[]> svIdCnDataMap = cnDataLoader.getSvIdCnDataMap();
+        final Map<Integer, SvCNData[]> svIdCnDataMap = cnDataLoader.getSvIdCnDataMap();
 
         chrCnDataMap.clear();
         svIdCnDataMap.clear();
@@ -267,7 +272,7 @@ public class CnSegmentBuilder
             final List<SvCNData> cnDataList = Lists.newArrayList();
             chrCnDataMap.put(chromosome, cnDataList);
 
-            int centromerePosition = SvUtilities.getChromosomalArmLength(chromosome, P_ARM);
+            int centromerePosition = SvUtilities.getChromosomalArmLength(chromosome, P);
             int chromosomeLength = SvUtilities.getChromosomeLength(chromosome);
 
             for(int i = 0; i < breakendList.size(); ++i)
@@ -280,16 +285,20 @@ public class CnSegmentBuilder
                 double variantBaf;
 
                 if(variantCopyNumber >= 2)
+                {
                     variantBaf = (variantCopyNumber - 1) / variantCopyNumber;
+                }
                 else
+                {
                     variantBaf = min(1.0, 1 / variantCopyNumber);
+                }
 
                 SvCNData cnData = null;
 
                 if(i == 0)
                 {
                     // add telomere segment at start, and centromere as soon as the breakend crosses the centromere
-                    if(breakend.arm() == Q_ARM)
+                    if(breakend.arm() == Q)
                     {
                         SvCNData extraCnData = new SvCNData(cnId++, chromosome, 0, centromerePosition,
                                 defaultCopyNumber, TELOMERE.toString(), CENTROMERE.toString(), 1, defaultBaf, 100);
@@ -317,9 +326,9 @@ public class CnSegmentBuilder
                 {
                     SvBreakend nextBreakend = breakendList.get(i + 1);
 
-                    if(breakend.arm() == P_ARM && nextBreakend.arm() == Q_ARM)
+                    if(breakend.arm() == P && nextBreakend.arm() == Q)
                     {
-                        cnData = new SvCNData(cnId++, chromosome, breakend.position(), centromerePosition-1,
+                        cnData = new SvCNData(cnId++, chromosome, breakend.position(), centromerePosition - 1,
                                 variantCopyNumber, var.type().toString(), CENTROMERE.toString(), 1, variantBaf, 100);
 
                         cnData.setIndex(cnDataList.size());
@@ -345,7 +354,7 @@ public class CnSegmentBuilder
                 else
                 {
                     // last breakend runs out to the telomere
-                    if(breakend.arm() == P_ARM)
+                    if(breakend.arm() == P)
                     {
                         cnData = new SvCNData(cnId++, chromosome, breakend.position(), centromerePosition - 1,
                                 variantCopyNumber, var.type().toString(), CENTROMERE.toString(), 1, variantBaf, 100);
@@ -398,14 +407,7 @@ public class CnSegmentBuilder
 
     public void setSamplePurity(final CnDataLoader cnDataLoader, double purity, double ploidy, Gender gender)
     {
-        FittedPurity fittedPurity = ImmutableFittedPurity.builder()
-                .purity(purity)
-                .ploidy(ploidy)
-                .diploidProportion(1)
-                .normFactor(1)
-                .score(1)
-                .somaticPenalty(0)
-                .build();
+        FittedPurity fittedPurity = new FittedPurity(purity, 1, ploidy, 1, 1, 0);
 
         FittedPurityScore purityScore = ImmutableFittedPurityScore.builder()
                 .maxPurity(1)
@@ -428,7 +430,6 @@ public class CnSegmentBuilder
                 .amberMeanDepth(0)
                 .lohPercent(0)
                 .tincLevel(0)
-                .chimerismPercentage(0)
                 .build();
 
         PurityContext purityContext = ImmutablePurityContext.builder()
@@ -452,6 +453,4 @@ public class CnSegmentBuilder
 
         cnDataLoader.setPurityContext(purityContext);
     }
-
-
 }

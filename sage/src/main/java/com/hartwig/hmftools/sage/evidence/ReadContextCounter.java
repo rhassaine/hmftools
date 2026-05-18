@@ -177,7 +177,7 @@ public class ReadContextCounter
         {
             mMatcher = new ReadContextMatcher(mReadContext, true, isReferenceSample);
 
-            mVariantVis = config.Visualiser.Enabled && config.Visualiser.processVariant(mVariant)
+            mVariantVis = config.Visualiser.enabled() && config.Visualiser.processVariant(mVariant)
                     ? new VariantVis(mConfig, mSample, mVariant, mReadContext, mTier) : null;
         }
 
@@ -343,6 +343,8 @@ public class ReadContextCounter
 
     public boolean exceedsMaxCoverage() { return mCounts.Total >= mMaxCoverage; }
 
+    public boolean allowUncertainCoreBases() { return mAllowUncertainCoreBases; }
+
     public String toString()
     {
         return format("id(%d) var(%s) core(%s) counts(f=%d p=%d c=%d)",
@@ -368,7 +370,7 @@ public class ReadContextCounter
             return MAP_QUAL;
         }
 
-        if(mConfig.Quality.HighDepthMode && fragmentData == null && isChimericRead(record))
+        if(mConfig.HighDepthMode && fragmentData == null && isChimericRead(record))
         {
             addVariantVisRecord(record, ReadContextMatch.NONE, null, fragmentData);
             return CHIMERIC;
@@ -439,7 +441,10 @@ public class ReadContextCounter
         if(variantCovered)
         {
             if(hasUncertainCoreBases(record, readVarIndex, splitReadSegment))
+            {
+                addVariantVisRecord(record, ReadContextMatch.NONE, null, fragmentData);
                 return NON_CORE;
+            }
 
             qualityScores = mQualityCalculator.calculateQualityScores(this, readVarIndex, record, adjustedNumOfEvents);
 
@@ -514,12 +519,15 @@ public class ReadContextCounter
             boolean canRealign = realignedReadIndex != INVALID_INDEX && coversVariant(record, realignedReadIndex, splitReadSegment);
 
             if(canRealign)
-                realignedType = checkRealignment(mReadContext, mMatcher, record, readVarIndex, realignedReadIndex, splitReadSegment);
+                realignedType = checkRealignment(mReadContext, mMatcher, record, readVarIndex, realignedReadIndex, splitReadSegment, mQualCache.isMsiSampleAndVariant());
 
             if(realignedType != RealignedType.NONE)
             {
                 if(hasUncertainCoreBases(record, realignedReadIndex, splitReadSegment))
+                {
+                    addVariantVisRecord(record, ReadContextMatch.NONE, null, fragmentData);
                     return UNRELATED;
+                }
 
                 // recompute qual off this realigned index
                 qualityScores = mQualityCalculator.calculateQualityScores(
@@ -571,7 +579,7 @@ public class ReadContextCounter
 
         if(realignedType == RealignedType.NONE)
         {
-            JitterMatch jitterMatch = checkJitter(mReadContext, mMatcher, record, readVarIndex);
+            JitterMatch jitterMatch = checkJitter(mReadContext, mMatcher, record, readVarIndex, mQualCache.isMsiSampleAndVariant());
             mJitterData.update(jitterMatch);
         }
 
@@ -654,7 +662,7 @@ public class ReadContextCounter
 
     private boolean belowQualThreshold(double calcBaseQuality)
     {
-        return mConfig.Quality.HighDepthMode && !mQualCache.usesMsiIndelErrorQual() && !isHighBaseQual(calcBaseQuality);
+        return mConfig.HighDepthMode && !mQualCache.usesMsiIndelErrorQual() && !isHighBaseQual(calcBaseQuality);
     }
 
     private void registerReadSupport(

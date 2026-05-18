@@ -37,11 +37,12 @@ public record PanelBuilderConfig(
         @Nullable String bwaLibPath,
         @Nullable String genesFile,
         boolean includeCnBackbone,
-        @Nullable String amberSitesFile,
+        @Nullable String hetSitesFile,
         int cnBackboneResolution,
         boolean includeCdr3,
         List<String> customRegionsFiles,
-        @Nullable String customSvsFile,
+        @Nullable String customSmallVariantsFile,
+        @Nullable String customStructuralVariantsFile,
         @Nullable SampleVariantsConfig sampleVariants,
         int threads,
         @Nullable String outputId,
@@ -53,8 +54,8 @@ public record PanelBuilderConfig(
     private static final String DESC_BWA_INDEX_IMAGE_FILE = "Reference genome BWA-MEM index GATK image file";
     private static final String CFG_INCLUDE_CN_BACKBONE = "cn_backbone";
     private static final String DESC_INCLUDE_CN_BACKBONE = "Include copy number backbone probes";
-    private static final String CFG_AMBER_SITES_FILE = "amber_sites";
-    private static final String DESC_AMBER_SITES_FILE = "Amber heterozygous sites TSV file";
+    private static final String CFG_HET_SITES_FILE = "het_sites";
+    private static final String DESC_HET_SITES_FILE = "Heterozygous SNP sites TSV file";
     private static final String CFG_CN_BACKBONE_RESOLUTION = "cn_backbone_res_kb";
     private static final String DESC_CN_BACKBONE_RESOLUTION = "Approximate spacing between copy number backbone probes, in kb";
     private static final String CFG_TARGET_GENES_FILE = "genes";
@@ -63,6 +64,8 @@ public record PanelBuilderConfig(
     private static final String DESC_INCLUDE_CDR3 = "Include fixed CDR3 panel probes";
     private static final String CFG_CUSTOM_REGIONS_FILE = "custom_regions";
     private static final String DESC_CUSTOM_REGIONS_FILE = "Custom regions TSV file(s) (separate multiple paths with comma)";
+    private static final String CFG_CUSTOM_SMALL_VARIANTS_FILE = "custom_small_variants";
+    private static final String DESC_CUSTOM_SMALL_VARIANTS_FILE = "Custom small variants TSV file";
     private static final String CFG_CUSTOM_SVS_FILE = "custom_svs";
     private static final String DESC_CUSTOM_SV_FILE = "Custom structural variants TSV file";
     private static final String CFG_VERBOSE_OUTPUT = "verbose_output";
@@ -82,10 +85,11 @@ public record PanelBuilderConfig(
                 configBuilder.getValue(BWA_LIB_PATH),
                 configBuilder.getValue(CFG_TARGET_GENES_FILE),
                 configBuilder.hasFlag(CFG_INCLUDE_CN_BACKBONE),
-                configBuilder.getValue(CFG_AMBER_SITES_FILE),
+                configBuilder.getValue(CFG_HET_SITES_FILE),
                 configBuilder.getInteger(CFG_CN_BACKBONE_RESOLUTION) * 1000,
                 configBuilder.hasFlag(CFG_INCLUDE_CDR3),
                 customRegionsFiles,
+                configBuilder.getValue(CFG_CUSTOM_SMALL_VARIANTS_FILE),
                 configBuilder.getValue(CFG_CUSTOM_SVS_FILE),
                 SampleVariantsConfig.fromConfigBuilder(configBuilder),
                 parseThreads(configBuilder),
@@ -104,11 +108,12 @@ public record PanelBuilderConfig(
         configBuilder.addPath(CFG_BWA_INDEX_IMAGE_FILE, false, DESC_BWA_INDEX_IMAGE_FILE);
 
         configBuilder.addFlag(CFG_INCLUDE_CN_BACKBONE, DESC_INCLUDE_CN_BACKBONE);
-        configBuilder.addPath(CFG_AMBER_SITES_FILE, false, DESC_AMBER_SITES_FILE);
+        configBuilder.addPath(CFG_HET_SITES_FILE, false, DESC_HET_SITES_FILE);
         configBuilder.addInteger(CFG_CN_BACKBONE_RESOLUTION, DESC_CN_BACKBONE_RESOLUTION, CN_BACKBONE_RESOLUTION_KB_DEFAULT);
         configBuilder.addPath(CFG_TARGET_GENES_FILE, false, DESC_TARGET_GENES_FILE);
         configBuilder.addFlag(CFG_INCLUDE_CDR3, DESC_INCLUDE_CDR3);
         configBuilder.addPaths(CFG_CUSTOM_REGIONS_FILE, false, DESC_CUSTOM_REGIONS_FILE);
+        configBuilder.addPath(CFG_CUSTOM_SMALL_VARIANTS_FILE, false, DESC_CUSTOM_SMALL_VARIANTS_FILE);
         configBuilder.addPath(CFG_CUSTOM_SVS_FILE, false, DESC_CUSTOM_SV_FILE);
 
         SampleVariantsConfig.registerConfig(configBuilder);

@@ -30,7 +30,6 @@ public class TestGermlineVariantDataBuilder
     public boolean reported = true;
     public HotspotType hotspotStatus = HotspotType.HOTSPOT;
     public VariantTier tier = VariantTier.HOTSPOT;
-    public boolean biallelic = false;
     public String canonicalEffect = "missense_variant";
     public CodingEffect canonicalCodingEffect = CodingEffect.MISSENSE;
     public String canonicalHgvsCodingImpact = "c.1799T>A";
@@ -56,7 +55,6 @@ public class TestGermlineVariantDataBuilder
         b.reported = false;
         b.hotspotStatus = HotspotType.NEAR_HOTSPOT;
         b.tier = VariantTier.PANEL;
-        b.biallelic = true;
         b.canonicalEffect = "synonymous_variant";
         b.canonicalCodingEffect = CodingEffect.SYNONYMOUS;
         b.canonicalHgvsCodingImpact = "c.1800T>A";
@@ -93,13 +91,16 @@ public class TestGermlineVariantDataBuilder
                 .canonicalCodingEffect(canonicalCodingEffect)
                 .canonicalHgvsCodingImpact(canonicalHgvsCodingImpact)
                 .canonicalHgvsProteinImpact(canonicalHgvsProteinImpact)
+                .canonicalAffectedCodon(1)
+                .canonicalAffectedExon(1)
                 .qual(qual)
                 .filter(filters.stream().sorted().collect(Collectors.joining(FILTER_DELIMITER)))
                 .otherReportedEffects(otherReportedEffects)
                 .hotspot(hotspotStatus)
                 .adjustedVAF(purityAdjustedVaf)
                 .variantCopyNumber(variantCopyNumber)
-                .biallelic(biallelic)
+                .biallelic(false)
+                .biallelicProbability(0)
                 .reported(reported)
                 .tier(tier)
                 .canonicalTranscript("")

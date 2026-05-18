@@ -12,14 +12,8 @@ import org.jetbrains.annotations.Nullable;
 @Value.Style(passAnnotations = { NotNull.class, Nullable.class })
 public interface OrangePlots
 {
-    @Nullable
-    String sageReferenceBQRPlot();
-
     @NotNull
-    String sageTumorBQRPlot();
-
-    @NotNull
-    String purpleInputPlot();
+    String purpleInputCircosPlot();
 
     @NotNull
     String purpleFinalCircosPlot();
@@ -31,13 +25,16 @@ public interface OrangePlots
     String purpleCopyNumberPlot();
 
     @NotNull
+    String purpleMinorAlleleMapPlot();
+
+    @NotNull
     String purpleVariantCopyNumberPlot();
 
     @NotNull
     String purplePurityRangePlot();
 
     @NotNull
-    String purpleKataegisPlot();
+    String purpleRainfallPlot();
 
     @NotNull
     List<String> linxDriverPlots();
@@ -45,11 +42,6 @@ public interface OrangePlots
     @Nullable
     String cuppaSummaryPlot();
 
-    @Deprecated
     @Nullable
-    String cuppaFeaturePlot();
-
-    @Deprecated
-    @Nullable
-    String cuppaChartPlot();
+    String qSeePlot();
 }

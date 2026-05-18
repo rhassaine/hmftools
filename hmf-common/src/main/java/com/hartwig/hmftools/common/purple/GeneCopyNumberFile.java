@@ -14,6 +14,7 @@ import java.util.StringJoiner;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.hartwig.hmftools.common.driver.DriverType;
 
 public final class GeneCopyNumberFile
@@ -144,7 +145,7 @@ public final class GeneCopyNumberFile
             String[] values = line.split(TSV_DELIM, -1);
 
             double gcContent = gcIndex != null ? Double.parseDouble(values[gcIndex]) : 0; // addded in Purple v4.2
-            double relativeMinCopyNumber = relMinCnIndex != null ? Double.parseDouble(values[relMinCnIndex]) : 0; // added in Purple v4.3
+            double relativeMinCopyNumber = relMinCnIndex != null ? Double.parseDouble(values[relMinCnIndex]) : -1; // added in Purple v4.3
 
             GeneCopyNumber geneCopyNumber = new GeneCopyNumber(
                     values[chrIndex], Integer.parseInt(values[startIndex]), Integer.parseInt(values[endIndex]),
@@ -171,5 +172,25 @@ public final class GeneCopyNumberFile
         }
 
         return geneCopyNumbers;
+    }
+
+    public static Map<String, List<GeneCopyNumber>> listToMap(final List<GeneCopyNumber> geneCopyNumbers)
+    {
+        final Map<String, List<GeneCopyNumber>> geneCopyNumberMap = Maps.newHashMap();
+
+        for(GeneCopyNumber geneCopyNumber : geneCopyNumbers)
+        {
+            List<GeneCopyNumber> geneRegions = geneCopyNumberMap.get(geneCopyNumber.geneName());
+
+            if(geneRegions == null)
+            {
+                geneRegions = Lists.newArrayList();
+                geneCopyNumberMap.put(geneCopyNumber.geneName(), geneRegions);
+            }
+
+            geneRegions.add(geneCopyNumber);
+        }
+
+        return geneCopyNumberMap;
     }
 }

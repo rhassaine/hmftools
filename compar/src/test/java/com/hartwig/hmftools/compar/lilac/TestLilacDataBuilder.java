@@ -1,5 +1,7 @@
 package com.hartwig.hmftools.compar.lilac;
 
+import static com.hartwig.hmftools.common.hla.HlaCommon.MHC_CLASS_I;
+
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -10,6 +12,7 @@ import com.hartwig.hmftools.compar.TestComparableItemBuilder;
 
 public class TestLilacDataBuilder
 {
+    public String genes = MHC_CLASS_I;
     public String qcStatus = "PASS";
     public int totalFragments = 1600;
     public int fittedFragments = 1500;
@@ -27,6 +30,7 @@ public class TestLilacDataBuilder
 
     private static final Consumer<TestLilacDataBuilder> ALTERNATE_INITIALIZER = b ->
     {
+        b.genes = "HLA_DPB1";
         b.qcStatus = "WARN_LOW_COVERAGE";
         b.totalFragments = 1500;
         b.fittedFragments = 1400;
@@ -49,6 +53,7 @@ public class TestLilacDataBuilder
     private LilacData build()
     {
         LilacQcData qcData = ImmutableLilacQcData.builder()
+                .genes(genes)
                 .status(qcStatus)
                 .totalFragments(totalFragments)
                 .fittedFragments(fittedFragments)

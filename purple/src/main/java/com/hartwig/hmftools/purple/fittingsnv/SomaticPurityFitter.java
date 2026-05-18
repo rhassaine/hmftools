@@ -9,10 +9,12 @@ import static java.util.stream.Collectors.toList;
 
 import static com.hartwig.hmftools.common.variant.CodingEffect.MISSENSE;
 import static com.hartwig.hmftools.common.variant.CodingEffect.NONSENSE_OR_FRAMESHIFT;
+import static com.hartwig.hmftools.common.variant.CodingEffect.SPLICE;
 import static com.hartwig.hmftools.common.variant.PaveVcfTags.GNOMAD_FREQ;
 import static com.hartwig.hmftools.common.variant.PaveVcfTags.MAPPABILITY;
 import static com.hartwig.hmftools.common.variant.VariantType.INDEL;
 import static com.hartwig.hmftools.purple.PurpleConstants.HOTSPOT_GNOMAD_FREQ_THRESHOLD;
+import static com.hartwig.hmftools.purple.PurpleConstants.PANEL_GNOMAD_FREQ_THRESHOLD;
 import static com.hartwig.hmftools.purple.PurpleConstants.PURITY_INCREMENT_DEFAULT;
 import static com.hartwig.hmftools.purple.PurpleConstants.SOMATIC_FIT_TUMOR_ONLY_HOTSPOT_VAF_CUTOFF;
 import static com.hartwig.hmftools.purple.PurpleConstants.SOMATIC_FIT_TUMOR_ONLY_VAF_MAX;
@@ -23,9 +25,7 @@ import static com.hartwig.hmftools.purple.PurpleConstants.SNV_FITTING_MAX_REPEAT
 import static com.hartwig.hmftools.purple.PurpleConstants.SNV_HOTSPOT_MAX_SNV_COUNT;
 import static com.hartwig.hmftools.purple.PurpleConstants.SNV_HOTSPOT_VAF_PROBABILITY;
 import static com.hartwig.hmftools.purple.PurpleConstants.SOMATIC_FIT_TUMOR_ONLY_VAF_MIN;
-import static com.hartwig.hmftools.purple.PurpleConstants.SOMATIC_FIT_TUMOR_ONLY_PLOIDY_MAX;
-import static com.hartwig.hmftools.purple.PurpleConstants.SOMATIC_FIT_TUMOR_ONLY_PLOIDY_MIN;
-import static com.hartwig.hmftools.purple.PurpleConstants.SOMATIC_FIT_TUMOR_ONLY_PURITY_MIN;
+import static com.hartwig.hmftools.purple.fitting.PurityPloidyFitter.findMatchedFittedPurity;
 import static com.hartwig.hmftools.purple.fittingsnv.SomaticReadjustmentFit.calcReadjustmentPurity;
 import static com.hartwig.hmftools.purple.region.ObservedRegionFactory.EXCLUDED_IMMUNE_REGIONS;
 
@@ -135,13 +135,6 @@ public class SomaticPurityFitter
             if(!isFittingCandidate(variant))
                 continue;
 
-            /*
-            if(variant.type() == INDEL)
-            {
-                PPL_LOGGER.debug("variant({}) used for fitting with vaf({})", variant, format("%.2f", variant.alleleFrequency()));
-            }
-            */
-
             Optional<ObservedRegion> region = observedRegionSelector.select(variant);
 
             GermlineStatus germlineStatus = region.isPresent() ? region.get().germlineStatus() : GermlineStatus.UNKNOWN;
@@ -167,7 +160,7 @@ public class SomaticPurityFitter
             logFilteredFittingCandidate(variant, "immune region");
             return false;
         }
-        
+
         if(!variant.hasTumorAlleleDepth() || variant.tumorAlleleDepth().TotalReadCount == 0)
         {
             logFilteredFittingCandidate(variant, "zero tumor depth");
@@ -176,44 +169,50 @@ public class SomaticPurityFitter
 
         VariantTier variantTier = variant.decorator().tier();
 
-        boolean isHotspotType = variant.isHotspotType();
-        
         double variantGnomadFreq = variant.context().getAttributeAsDouble(GNOMAD_FREQ, -1);
 
-        if(variantGnomadFreq > 0 && variantGnomadFreq < HOTSPOT_GNOMAD_FREQ_THRESHOLD && isHotspotType)
+        if(variantGnomadFreq > 0)
+        {
+            if(variant.isHotspot() && variantGnomadFreq < HOTSPOT_GNOMAD_FREQ_THRESHOLD)
+                return true;
+
+            if(variant.tier() == VariantTier.PANEL && variantGnomadFreq < PANEL_GNOMAD_FREQ_THRESHOLD)
+                return true;
+        }
+
+        boolean isHotspotType = variant.isHotspotType();
+
+        if(isHotspotType) // this does mean that a panel variant which is pathogenic in Clinvar has no further Gnomad freq checks
             return true;
 
-        if(!isHotspotType)
+        if(variantGnomadFreq > 0)
         {
-            if(variant.context().hasAttribute(GNOMAD_FREQ))
-            {
-                logFilteredFittingCandidate(variant, "gnomad frequency");
-                return false;
-            }
+            logFilteredFittingCandidate(variant, "Gnomad frequency");
+            return false;
+        }
 
-            if(variantTier == VariantTier.LOW_CONFIDENCE || variantTier == VariantTier.UNKNOWN)
-            {
-                logFilteredFittingCandidate(variant, "low tier");
-                return false;
-            }
+        if(variantTier == VariantTier.LOW_CONFIDENCE || variantTier == VariantTier.UNKNOWN)
+        {
+            logFilteredFittingCandidate(variant, "low tier");
+            return false;
+        }
 
-            if(variant.decorator().repeatCount() > SNV_FITTING_MAX_REPEATS)
-            {
-                logFilteredFittingCandidate(variant, "max repeats");
-                return false;
-            }
+        if(variant.decorator().repeatCount() > SNV_FITTING_MAX_REPEATS)
+        {
+            logFilteredFittingCandidate(variant, "max repeats");
+            return false;
+        }
 
-            if(variant.context().hasAttribute(MAPPABILITY) && variant.decorator().mappability() < SNV_FITTING_MAPPABILITY)
-            {
-                logFilteredFittingCandidate(variant, "mappability");
-                return false;
-            }
+        if(variant.context().hasAttribute(MAPPABILITY) && variant.decorator().mappability() < SNV_FITTING_MAPPABILITY)
+        {
+            logFilteredFittingCandidate(variant, "mappability");
+            return false;
+        }
 
-            if(variant.referenceAlleleReadCount() > 0)
-            {
-                logFilteredFittingCandidate(variant, "germline allele count");
-                return false;
-            }
+        if(variant.referenceAlleleReadCount() > 0)
+        {
+            logFilteredFittingCandidate(variant, "germline allele count");
+            return false;
         }
 
         return true;
@@ -222,7 +221,9 @@ public class SomaticPurityFitter
     private static void logFilteredFittingCandidate(final SomaticVariant variant, final String reason)
     {
         if(!PPL_LOGGER.isTraceEnabled())
+        {
             return;
+        }
 
         PPL_LOGGER.trace("variant({}) excluded from fitting: {}", variant, reason);
     }
@@ -265,7 +266,9 @@ public class SomaticPurityFitter
             FittedPurity matchedFittedPurity = findMatchedFittedPurity(hotspotPurity, diploidCandidates);
 
             if(matchedFittedPurity != null)
+            {
                 return matchedFittedPurity;
+            }
         }
 
         if(somaticFitPurity != null)
@@ -277,45 +280,13 @@ public class SomaticPurityFitter
                 FittedPurity matchedFittedPurity = findMatchedFittedPurity(reassessmentPurity, diploidCandidates);
 
                 if(matchedFittedPurity != null)
+                {
                     return matchedFittedPurity;
+                }
             }
         }
 
         return somaticFitPurity;
-    }
-
-    public static boolean highlyDiploidSomaticOrPanel(final FittedPurity normalPurityFit, final boolean highlyDiploidByFitPurity)
-    {
-        return (normalPurityFit.purity() > SOMATIC_FIT_TUMOR_ONLY_PURITY_MIN
-            && normalPurityFit.ploidy() > SOMATIC_FIT_TUMOR_ONLY_PLOIDY_MIN
-            && normalPurityFit.ploidy() < SOMATIC_FIT_TUMOR_ONLY_PLOIDY_MAX) || highlyDiploidByFitPurity;
-    }
-
-    protected static FittedPurity findMatchedFittedPurity(double purity, final List<FittedPurity> allCandidates)
-    {
-        // find the closest purity with diploid ploidy
-        FittedPurity closestPurity = null;
-        double closestDiff = 0;
-        double purityEpsilon = PURITY_INCREMENT_DEFAULT * 0.25;
-
-        for(FittedPurity fittedPurity : allCandidates)
-        {
-            if(abs(fittedPurity.ploidy() - 2) > 0.005)
-                continue;
-
-            double diff = abs(fittedPurity.purity() - purity);
-
-            if(closestPurity == null || diff < closestDiff)
-            {
-                if(diff < purityEpsilon)
-                    return fittedPurity;
-
-                closestDiff = diff;
-                closestPurity = fittedPurity;
-            }
-        }
-
-        return closestPurity;
     }
 
     @Nullable
@@ -330,25 +301,42 @@ public class SomaticPurityFitter
             if(!variant.isHotspotType())
             {
                 if(variant.variantImpact() == null)
+                {
                     continue;
+                }
 
                 CodingEffect codingEffect = variant.variantImpact().CanonicalCodingEffect;
 
-                if(codingEffect != NONSENSE_OR_FRAMESHIFT && codingEffect != MISSENSE)
+                if(codingEffect != NONSENSE_OR_FRAMESHIFT && codingEffect != MISSENSE && codingEffect != SPLICE)
+                {
                     continue;
+                }
 
                 DriverGene driverGene = driverGenes.DriverGeneMap.get(variant.variantImpact().GeneName);
 
                 if(driverGene == null)
+                {
                     continue;
+                }
 
                 if(codingEffect == NONSENSE_OR_FRAMESHIFT && !driverGene.reportNonsenseAndFrameshift())
+                {
                     continue;
+                }
                 else if(codingEffect == MISSENSE && !driverGene.reportMissenseAndInframe())
+                {
                     continue;
+                }
+                else if(codingEffect == SPLICE && !driverGene.reportSplice())
+                {
+                    continue;
+                }
             }
 
             double vaf = variant.alleleFrequency();
+
+            if(vaf < SOMATIC_FIT_TUMOR_ONLY_VAF_MIN)
+                continue;
 
             if(variant.isHotspotType())
             {
@@ -356,9 +344,6 @@ public class SomaticPurityFitter
             }
             else
             {
-                if(vaf < SOMATIC_FIT_TUMOR_ONLY_VAF_MIN)
-                    continue;
-
                 if(tumorOnlyMode && vaf > SOMATIC_FIT_TUMOR_ONLY_VAF_MAX)
                     continue;
             }
@@ -378,7 +363,9 @@ public class SomaticPurityFitter
         FittedPurity matchedFittedPurity = findMatchedFittedPurity(somaticPurity, allCandidates);
 
         if(matchedFittedPurity != null)
+        {
             return matchedFittedPurity;
+        }
 
         return null;
     }
@@ -387,10 +374,14 @@ public class SomaticPurityFitter
     protected static double calc75thPercentileValue(final List<Double> variantVafs)
     {
         if(variantVafs.isEmpty())
+        {
             return 0;
+        }
 
         if(variantVafs.size() == 1)
+        {
             return variantVafs.get(0);
+        }
 
         Collections.sort(variantVafs);
 
@@ -412,7 +403,7 @@ public class SomaticPurityFitter
         // double index75thPercentile = 0.75 * (variantVafs.size() + 1) - 1;
         double index75thPercentile = 0.75 * (variantVafs.size() - 1);
 
-        int lowerIndex = min((int)floor(index75thPercentile), variantVafs.size() - 2);
+        int lowerIndex = min((int) floor(index75thPercentile), variantVafs.size() - 2);
         int upperIndex = lowerIndex + 1;
 
         double lowerVaf = variantVafs.get(lowerIndex);
@@ -428,32 +419,44 @@ public class SomaticPurityFitter
     {
         // check for a hotspot variant with a higher VAF
         if(somaticVariants.size() > SNV_HOTSPOT_MAX_SNV_COUNT)
+        {
             return 0;
+        }
 
         double maxHotspotVaf = 0;
 
         for(SomaticVariant variant : somaticVariants)
         {
             if(!variant.isHotspotType())
+            {
                 continue;
+            }
 
             HumanChromosome chromosome = HumanChromosome.fromString(variant.chromosome());
 
             if(!chromosome.isAutosome())
             {
                 if(!(gender == Gender.FEMALE && chromosome == HumanChromosome._X))
+                {
                     continue;
+                }
             }
 
             if(variant.alleleFrequency() * 2 <= somaticPeakPurity || variant.alleleFrequency() > 0.5)
+            {
                 continue;
+            }
 
             if(variant.alleleFrequency() < maxHotspotVaf)
+            {
                 continue;
+            }
 
             // test this variants allele read count vs what's expected from the somatic peak
             if(!belowRequiredProbability(somaticPeakPurity, variant.totalReadCount(), variant.alleleReadCount()))
+            {
                 continue;
+            }
 
             PPL_LOGGER.info(format("hotspot(%s:%d) vaf(%.3f %d/%d)",
                     variant.chromosome(), variant.position(),
@@ -465,12 +468,16 @@ public class SomaticPurityFitter
         for(StructuralVariant sv : hotspotSVs)
         {
             if(!sv.hotspot() || sv.isFiltered() || sv.end() == null)
+            {
                 continue;
+            }
 
             double alleleFrequency = min(sv.start().alleleFrequency(), sv.end().alleleFrequency());
 
             if(alleleFrequency < maxHotspotVaf)
+            {
                 continue;
+            }
 
             PPL_LOGGER.info(String.format("hotspotSV(%s %s:%d-%s:%d) vaf(%.3f)",
                     sv.type(), sv.chromosome(true), sv.position(true), sv.chromosome(false), sv.position(false),
@@ -485,7 +492,9 @@ public class SomaticPurityFitter
     private boolean belowRequiredProbability(double peakPurity, int totalReadCount, int alleleReadCount)
     {
         if(peakPurity <= 0)
+        {
             return true;
+        }
 
         double expectedAlleleReadCount = peakPurity * 0.5 * totalReadCount;
 

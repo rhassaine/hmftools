@@ -11,12 +11,12 @@ import static com.hartwig.hmftools.common.utils.file.FileDelimiters.CSV_DELIM;
 import static com.hartwig.hmftools.common.utils.file.FileDelimiters.inferFileDelimiter;
 import static com.hartwig.hmftools.common.utils.file.FileReaderUtils.createFieldsIndexMap;
 import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.createBufferedWriter;
+import static com.hartwig.hmftools.isofox.IsofoxConfig.GENE_DIST_DESC;
+import static com.hartwig.hmftools.isofox.IsofoxConfig.GENE_DIST_FILE;
 import static com.hartwig.hmftools.isofox.IsofoxConfig.ISF_LOGGER;
 import static com.hartwig.hmftools.isofox.cohort.AnalysisType.PANEL_TPM_NORMALISATION;
 import static com.hartwig.hmftools.isofox.cohort.CohortConfig.formSampleFilenames;
 import static com.hartwig.hmftools.isofox.expression.cohort.CohortGenePercentiles.PAN_CANCER;
-import static com.hartwig.hmftools.isofox.loader.DataLoaderConfig.GENE_DIST_FILE;
-import static com.hartwig.hmftools.isofox.loader.DataLoaderConfig.GENE_DIST_FILE_DESC;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -58,7 +58,7 @@ public class GeneratePanelNormalisation
 
     public static void registerConfig(final ConfigBuilder configBuilder)
     {
-        configBuilder.addPath(GENE_DIST_FILE, false, GENE_DIST_FILE_DESC);
+        configBuilder.addPath(GENE_DIST_FILE, false, GENE_DIST_DESC);
         configBuilder.addPath(GENE_ID_FILE, false, GENE_ID_FILE_DESC);
     }
 
@@ -111,8 +111,8 @@ public class GeneratePanelNormalisation
         // load each sample's alt SJs and consolidate into a single list
         for(int i = 0; i < mConfig.SampleData.SampleIds.size(); ++i)
         {
-            final String sampleId = mConfig.SampleData.SampleIds.get(i);
-            final Path sampleFile = filenames.get(i);
+            String sampleId = mConfig.SampleData.SampleIds.get(i);
+            Path sampleFile = filenames.get(i);
 
             processSampleFile(sampleFile, geneTpms);
             ISF_LOGGER.debug("{}: sample({}) processed file", i, sampleId);
@@ -138,9 +138,9 @@ public class GeneratePanelNormalisation
 
             for(final String data : lines)
             {
-                final String[] values = data.split(fileDelim, -1);
+                String[] values = data.split(fileDelim, -1);
 
-                final String geneId = values[geneIdIndex];
+                String geneId = values[geneIdIndex];
 
                 if(!mGeneIds.contains(geneId))
                     continue;
@@ -184,9 +184,32 @@ public class GeneratePanelNormalisation
                 List<Double> tpms = geneTpms.get(geneId);
                 double panelMedian = Doubles.median(tpms);
 
+                if(panelMedian == 0)
+                {
+                    // interpolate between zero and non-zero values
+                    int zeroCount = 0;
+                    double minNonZeroValue = 0;
+
+                    for(double tpm : tpms)
+                    {
+                        if(tpm == 0)
+                            ++zeroCount;
+                        else if(minNonZeroValue == 0 || tpm < minNonZeroValue)
+                            minNonZeroValue = tpm;
+
+                    }
+
+                    int nonZeroCount = tpms.size() - zeroCount;
+                    panelMedian = nonZeroCount / (double)tpms.size() * minNonZeroValue;
+
+                    if(nonZeroCount == 0)
+                    {
+                        ISF_LOGGER.debug("gene({}) has zero for all sample TPMs", geneName);
+                    }
+                }
+
                 double wgsMedian = max(mWgsCohortMedians.get(i), MIN_WGS_MEDIAN_TPM);
                 double adjustmentFactor = panelMedian / wgsMedian;
-
 
                 writer.write(String.format("%s,%s,%4.3e,%4.3e,%.6f",
                         geneId, geneName, wgsMedian, panelMedian, adjustmentFactor));

@@ -26,12 +26,29 @@ import org.junit.Test;
 
 public abstract class ComparableItemTest<I extends ComparableItem, C extends ItemComparer, B>
 {
-    // Assumes alternate initializer in builder has value different from default for every field
     protected C comparer;
+
+    // Builder for objects to be tested. Default object needs to be "reportable" and "pass".
+    // Alternate initializer in builder needs to contain a value different from the default for every
+    // field that is compared in the "findMismatch" method, used in the "matches" method or that is used in the "reportable" method.
+    // Alternate object should still be pass.
     protected TestComparableItemBuilder<B, I> builder;
+
+    // Map from name of field compared in "findMismatch" to initializer that changes that field from the default value.
+    // This is meant for causing "VALUE" differences in testing.
     protected Map<String, Consumer<B>> fieldToAlternateValueInitializer;
+
+    // Map from name of field or fields used in "matches" method to initializer that changes that field from the default value.
+    // This is meant for creating non-matching objects in testing.
     protected Map<String, Consumer<B>> nameToAlternateIndexInitializer;
+
+    // Map from name of field used in "reportable" method to initializer that changes that field from the default value.
+    // This is meant for causing differences in reportability in testing.
     protected Map<String, Consumer<B>> reportabilityFieldToFalseReportabilityInitializer;
+
+    // Map from name of field or fields used in "isPass" method to initializer that causes "isPass" to be false.
+    // This is meant for causing differences in PASS status in testing.
+    protected Map<String, Consumer<B>> nameToNonPassInitializer;
 
     @Test
     public void fullyMatchesSelfInDetailedMode()
@@ -65,8 +82,8 @@ public abstract class ComparableItemTest<I extends ComparableItem, C extends Ite
         for(Map.Entry<String, Consumer<B>> entry : nameToAlternateIndexInitializer.entrySet())
         {
             I indexMismatch = builder.create(entry.getValue());
-            assertFalse("Test mismatch in index field: " + entry.getKey(), victim.matches(indexMismatch));
-            assertFalse("Test mismatch in index field: " + entry.getKey(), indexMismatch.matches(victim));
+            assertFalse("Test mismatch in index field (victim.matches(alt)): " + entry.getKey(), victim.matches(indexMismatch));
+            assertFalse("Test mismatch in index field (alt.matches(victim)): " + entry.getKey(), indexMismatch.matches(victim));
         }
     }
 
@@ -95,7 +112,7 @@ public abstract class ComparableItemTest<I extends ComparableItem, C extends Ite
             assertSingleFieldMismatch(field, reportableVictim, nonReportableVictim, MatchLevel.DETAILED, diffThresholds, MismatchType.VALUE);
             assertSingleFieldMismatch(field, nonReportableVictim, reportableVictim, MatchLevel.DETAILED, diffThresholds, MismatchType.VALUE);
 
-            assertSingleFieldMismatch(field, reportableVictim, nonReportableVictim, MatchLevel.REPORTABLE, diffThresholds, MismatchType.REF_ONLY);
+            assertSingleFieldMismatch(field, reportableVictim, nonReportableVictim, MatchLevel.REPORTABLE, diffThresholds, MismatchType.OLD_ONLY);
             assertSingleFieldMismatch(field, nonReportableVictim, reportableVictim, MatchLevel.REPORTABLE, diffThresholds, MismatchType.NEW_ONLY);
         }
     }
@@ -112,7 +129,7 @@ public abstract class ComparableItemTest<I extends ComparableItem, C extends Ite
         Mismatch mismatch = refVictim.findMismatch(newVictim, MatchLevel.DETAILED, diffThresholds, false);
 
         assertEquals(MismatchType.VALUE, mismatch.Type);
-        assertEquals(refVictim, mismatch.RefItem);
+        assertEquals(refVictim, mismatch.OldItem);
         assertEquals(newVictim, mismatch.NewItem);
         assertDifferencesAreForFields(getAllValueFieldNames(), mismatch.DiffValues);
     }
@@ -133,6 +150,47 @@ public abstract class ComparableItemTest<I extends ComparableItem, C extends Ite
     public void hasKeyIfItShould()
     {
         assertEquals(nameToAlternateIndexInitializer.isEmpty(), builder.create().key().isEmpty());
+    }
+
+    @Test
+    public void doubleNonPassIsIgnored()
+    {
+        for(Map.Entry<String, Consumer<B>> entry : nameToNonPassInitializer.entrySet())
+        {
+            String name = entry.getKey();
+            final Consumer<B> initializer = entry.getValue();
+            I refVictim = builder.create(initializer);
+            I newVictim = builder.createWithAlternateDefaults(initializer);
+
+            DiffThresholds diffThresholds = createDefaultThresholds();
+            assertNull("Test non-PASS due to " + name + " is ignored when not including matches",
+                    refVictim.findMismatch(newVictim, MatchLevel.DETAILED, diffThresholds, false));
+            assertNull("Test non-PASS due to " + name + " is ignored when including matches",
+                    refVictim.findMismatch(newVictim, MatchLevel.DETAILED, diffThresholds, true));
+        }
+    }
+
+    @Test
+    public void nonPassIsNotCallInDetailedMode()
+    {
+        for(Map.Entry<String, Consumer<B>> entry : nameToNonPassInitializer.entrySet())
+        {
+            String name = entry.getKey();
+            final Consumer<B> initializer = entry.getValue();
+            I passVictim = builder.create();
+            I nonPassVictim = builder.createWithAlternateDefaults(initializer);
+
+            DiffThresholds diffThresholds = createDefaultThresholds();
+            assertEquals("Test non-PASS due to " + name + " can cause REF_ONLY when not including matches",
+                    MismatchType.OLD_ONLY, passVictim.findMismatch(nonPassVictim, MatchLevel.DETAILED, diffThresholds, false).Type);
+            assertEquals("Test non-PASS due to " + name + " can cause REF_ONLY when including matches",
+                    MismatchType.OLD_ONLY, passVictim.findMismatch(nonPassVictim, MatchLevel.DETAILED, diffThresholds, true).Type);
+
+            assertEquals("Test non-PASS due to " + name + " can cause NEW_ONLY when not including matches",
+                    MismatchType.NEW_ONLY, nonPassVictim.findMismatch(passVictim, MatchLevel.DETAILED, diffThresholds, false).Type);
+            assertEquals("Test non-PASS due to " + name + " can cause NEW_ONLY when including matches",
+                    MismatchType.NEW_ONLY, nonPassVictim.findMismatch(passVictim, MatchLevel.DETAILED, diffThresholds, true).Type);
+        }
     }
 
     private void assertFullyMatchesSelf(final MatchLevel matchLevel)

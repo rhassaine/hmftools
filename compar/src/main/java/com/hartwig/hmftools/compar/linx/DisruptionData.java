@@ -53,7 +53,7 @@ public class DisruptionData implements ComparableItem
 
         for(BreakendData breakendData : Breakends)
         {
-            sj.add(breakendData.fullStr());
+            sj.add(breakendData.fullStr(true));
         }
 
         values.add(sj.toString());
@@ -62,11 +62,6 @@ public class DisruptionData implements ComparableItem
 
     @Override
     public boolean reportable() { return Breakends.stream().anyMatch(x -> x.Breakend.reportedStatus() == ReportedStatus.REPORTED); }
-
-    @Override
-    public boolean isPass() {
-        return true;
-    }
 
     @Override
     public String geneName() { return GeneName; }

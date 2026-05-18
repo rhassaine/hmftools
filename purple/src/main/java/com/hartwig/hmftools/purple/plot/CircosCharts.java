@@ -33,6 +33,7 @@ import com.hartwig.hmftools.common.utils.Downsample;
 import com.hartwig.hmftools.common.variant.VariantContextDecorator;
 import com.hartwig.hmftools.common.variant.VariantType;
 import com.hartwig.hmftools.purple.ChartConfig;
+import com.hartwig.hmftools.purple.DriverSourceData;
 import com.hartwig.hmftools.purple.PurpleConfig;
 import com.hartwig.hmftools.purple.region.ObservedRegion;
 
@@ -67,7 +68,7 @@ public class CircosCharts
             final String referenceId, final String sampleId,
             final Gender gender, final List<PurpleCopyNumber> copyNumber,
             final List<VariantContextDecorator> somaticVariants, final List<StructuralVariant> structuralVariants,
-            final List<ObservedRegion> regions, final List<AmberBAF> bafs) throws IOException
+            final List<ObservedRegion> regions, final List<AmberBAF> bafs, final List<DriverSourceData> driverSourceData) throws IOException
     {
         mCurrentReferenceId = referenceId;
         mCurrentSampleId = sampleId;
@@ -85,6 +86,7 @@ public class CircosCharts
         writeStructuralVariants(structuralVariants);
         writeObservedRegions(Downsample.downsample(MAX_PLOT_POINTS, regions));
         writeBafs(Downsample.downsample(MAX_PLOT_POINTS, bafs));
+        writeDrivers(driverSourceData);
     }
 
     public List<Future<Integer>> chartFutures()
@@ -180,9 +182,29 @@ public class CircosCharts
 
     private void writeEnrichedSomatics(final List<VariantContextDecorator> somaticVariants) throws IOException
     {
-        CircosSNPWriter.writePositions(mBaseCircosTumorSample + ".snp.circos", Downsample.downsample(MAX_PLOT_POINTS, snp(somaticVariants)));
-        CircosINDELWriter.writePositions(mBaseCircosTumorSample + ".indel.circos",
-                Downsample.downsample(MAX_PLOT_POINTS, indel(somaticVariants)));
+        List<VariantContextDecorator> snps = Lists.newArrayList();
+        List<VariantContextDecorator> indels = Lists.newArrayList();
+
+        for(VariantContextDecorator variant : somaticVariants)
+        {
+            if(variant.type() == VariantType.SNP)
+                snps.add(variant);
+            else if(variant.type() == VariantType.INDEL)
+                indels.add(variant);
+        }
+
+        CircosSnvWriter.writePositions(
+                mBaseCircosTumorSample + ".snp.circos", Downsample.downsample(MAX_PLOT_POINTS, snps));
+
+        CircosIndelWriter.writePositions(
+                mBaseCircosTumorSample + ".indel.circos", Downsample.downsample(MAX_PLOT_POINTS, indels));
+    }
+
+    private void writeDrivers(final List<DriverSourceData> driverSourceData) throws IOException
+    {
+        CircosDriverWriter.writeDrivers(mBaseCircosTumorSample + ".driver_text.circos",
+                mBaseCircosTumorSample + ".driver_pointer.circos",
+                driverSourceData);
     }
 
     private void writeConfig(final Gender gender) throws IOException
@@ -222,15 +244,5 @@ public class CircosCharts
         InputStream in = getClass().getResourceAsStream(resource);
         BufferedReader reader = new BufferedReader(new InputStreamReader(in));
         return IOUtils.toString(reader);
-    }
-
-    private List<VariantContextDecorator> snp(final List<VariantContextDecorator> somaticVariants)
-    {
-        return somaticVariants.stream().filter(x -> x.type() == VariantType.SNP).collect(Collectors.toList());
-    }
-
-    private List<VariantContextDecorator> indel(final List<VariantContextDecorator> somaticVariants)
-    {
-        return somaticVariants.stream().filter(x -> x.type() == VariantType.INDEL).collect(Collectors.toList());
     }
 }

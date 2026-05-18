@@ -50,7 +50,6 @@ public final class PurpleQCFile
     private static final String AMBER_MEAN_DEPTH = "AmberMeanDepth";
     private static final String LOH_PERCENT = "LohPercent";
     private static final String TINC_LEVEL = "TincLevel";
-    private static final String CHIMERISM_PERCENTAGE = "ChimerismPercentage";
 
     private static PurpleQC fromLines(final List<String> lines)
     {
@@ -72,8 +71,7 @@ public final class PurpleQCFile
                         lines, GERMLINE_ABERRATIONS, GermlineAberration.NONE.toString(), TSV_DELIM)))
                 .amberMeanDepth(Integer.parseInt(getValue(lines, AMBER_MEAN_DEPTH, "0", TSV_DELIM)))
                 .lohPercent(Double.parseDouble(getValue(lines, LOH_PERCENT, "-1", TSV_DELIM)))
-                .tincLevel(Double.parseDouble(getValue(lines, TINC_LEVEL, "0", TSV_DELIM)))
-                .chimerismPercentage(Double.parseDouble(getValue(lines, CHIMERISM_PERCENTAGE, "0", TSV_DELIM)));
+                .tincLevel(Double.parseDouble(getValue(lines, TINC_LEVEL, "0", TSV_DELIM)));
 
         return builder.build();
     }
@@ -91,12 +89,11 @@ public final class PurpleQCFile
         result.add(AMBER_GENDER + TSV_DELIM + purpleQC.amberGender());
         result.add(COBALT_GENDER + TSV_DELIM + purpleQC.cobaltGender());
         result.add(DELETED_GENES + TSV_DELIM + purpleQC.deletedGenes());
-        result.add(CONTAMINATION + TSV_DELIM + purpleQC.contamination());
+        result.add(CONTAMINATION + TSV_DELIM + FORMAT.format(purpleQC.contamination()));
         result.add(GERMLINE_ABERRATIONS + TSV_DELIM + GermlineAberration.toString(purpleQC.germlineAberrations()));
         result.add(AMBER_MEAN_DEPTH + TSV_DELIM + purpleQC.amberMeanDepth());
         result.add(LOH_PERCENT + TSV_DELIM + FORMAT.format(purpleQC.lohPercent()));
         result.add(TINC_LEVEL + TSV_DELIM + FORMAT.format(purpleQC.tincLevel()));
-        result.add(CHIMERISM_PERCENTAGE + TSV_DELIM + FORMAT.format(purpleQC.chimerismPercentage()));
 
         return result;
     }

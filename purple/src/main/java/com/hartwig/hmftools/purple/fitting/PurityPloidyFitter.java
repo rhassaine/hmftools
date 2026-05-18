@@ -1,18 +1,22 @@
 package com.hartwig.hmftools.purple.fitting;
 
-import static java.lang.String.format;
+import static java.lang.Math.abs;
 import static java.util.stream.Collectors.toList;
 
 import static com.hartwig.hmftools.common.purple.FittedPurityMethod.NORMAL;
+import static com.hartwig.hmftools.common.purple.FittedPurityMethod.NO_TUMOR;
 import static com.hartwig.hmftools.common.utils.Doubles.lessOrEqual;
+import static com.hartwig.hmftools.purple.PurpleConstants.DIPLOID_PLOIDY;
+import static com.hartwig.hmftools.purple.PurpleConstants.MIN_PURITY_DEFAULT;
+import static com.hartwig.hmftools.purple.PurpleConstants.PURITY_INCREMENT_DEFAULT;
+import static com.hartwig.hmftools.purple.PurpleConstants.SOMATIC_FIT_CONTAMINATION_CUTOFF;
+import static com.hartwig.hmftools.purple.PurpleConstants.SOMATIC_FIT_TUMOR_ONLY_PLOIDY_MAX;
+import static com.hartwig.hmftools.purple.PurpleConstants.SOMATIC_FIT_TUMOR_ONLY_PLOIDY_MIN;
+import static com.hartwig.hmftools.purple.PurpleConstants.SOMATIC_FIT_TUMOR_ONLY_PURITY_MIN;
 import static com.hartwig.hmftools.purple.PurpleUtils.PPL_LOGGER;
 import static com.hartwig.hmftools.purple.PurpleUtils.formatPurity;
-import static com.hartwig.hmftools.purple.PurpleConstants.MAX_SOMATIC_FIT_DELETED_PERC;
-import static com.hartwig.hmftools.purple.PurpleConstants.MIN_PURITY_DEFAULT;
-import static com.hartwig.hmftools.purple.copynumber.PurpleCopyNumberFactory.calculateDeletedDepthWindows;
 import static com.hartwig.hmftools.purple.copynumber.PurpleCopyNumberFactory.validateCopyNumbers;
 import static com.hartwig.hmftools.purple.fitting.VariantPurityFitter.somaticFitIsWorse;
-import static com.hartwig.hmftools.purple.fittingsnv.SomaticPurityFitter.highlyDiploidSomaticOrPanel;
 
 import java.util.Collections;
 import java.util.Comparator;
@@ -25,7 +29,6 @@ import com.hartwig.hmftools.common.purple.FittedPurity;
 import com.hartwig.hmftools.common.purple.FittedPurityMethod;
 import com.hartwig.hmftools.common.purple.FittedPurityScore;
 import com.hartwig.hmftools.common.purple.Gender;
-import com.hartwig.hmftools.common.purple.ImmutableFittedPurity;
 import com.hartwig.hmftools.common.purple.ImmutableFittedPurityScore;
 import com.hartwig.hmftools.common.purple.PurpleCopyNumber;
 import com.hartwig.hmftools.common.utils.Doubles;
@@ -48,13 +51,13 @@ public class PurityPloidyFitter
     private final PurpleConfig mConfig;
     private final boolean mTargetedMode;
 
-    private VariantPurityFitter mVariantPurityFitter;
+    private final VariantPurityFitter mVariantPurityFitter;
 
     // output from fit
     private final List<PurpleCopyNumber> mCopyNumbers;
     private final List<ObservedRegion> mFittedRegions;
 
-    private List<FittedPurity> mCopyNumberFitCandidates;
+    private final List<FittedPurity> mCopyNumberFitCandidates;
     private FittedPurity mCopyNumberPurityFit;
     private FittedPurity mSomaticPurityFit;
     private FittedPurity mFinalPurityFit;
@@ -63,13 +66,13 @@ public class PurityPloidyFitter
     private BestFit mBestFit;
     private PurityAdjuster mPurityAdjuster;
 
-    private final boolean mHasChimerism;
+    private final double ContaminationLevel;
     private boolean mIsValid;
 
     public PurityPloidyFitter(
-            final PurpleConfig config, final ReferenceData referenceData, final SampleData sampleData, final ExecutorService executorService,
-            final RegionFitCalculator regionFitCalculator, final List<ObservedRegion> observedRegions, final Gender gender,
-            final boolean hasChimerism)
+            final PurpleConfig config, final ReferenceData referenceData, final SampleData sampleData,
+            final ExecutorService executorService,
+            final RegionFitCalculator regionFitCalculator, final List<ObservedRegion> observedRegions, final Gender gender)
     {
         mSampleData = sampleData;
         mConfig = config;
@@ -78,7 +81,7 @@ public class PurityPloidyFitter
         mRegionFitCalculator = regionFitCalculator;
         mObservedRegions = observedRegions;
         mGender = gender;
-        mHasChimerism = hasChimerism;
+        ContaminationLevel = sampleData.Amber.Contamination;
 
         mCopyNumbers = Lists.newArrayList();
         mFittedRegions = Lists.newArrayList();
@@ -96,25 +99,40 @@ public class PurityPloidyFitter
         mIsValid = true;
     }
 
-    public List<PurpleCopyNumber> copyNumbers() { return mCopyNumbers; }
-    public List<ObservedRegion> fittedRegions() { return mFittedRegions; }
-    public List<FittedPurity> copyNumberFitCandidates() { return mCopyNumberFitCandidates; }
-    public FittedPurity copyNumberFit() { return mCopyNumberPurityFit; }
-    public FittedPurity somaticFit() { return mSomaticPurityFit; }
-    public boolean isValid() { return mIsValid; }
+    public List<PurpleCopyNumber> copyNumbers()
+    {
+        return mCopyNumbers;
+    }
+
+    public List<ObservedRegion> fittedRegions()
+    {
+        return mFittedRegions;
+    }
+
+    public boolean isValid()
+    {
+        return mIsValid;
+    }
 
     public BestFit finalFit()
     {
         if(!mIsValid)
+        {
             return null;
+        }
 
         if(mBestFit == null)
+        {
             mBestFit = new BestFit(mFinalPurityFit, mFitPurityScore, mFitMethod, mCopyNumberFitCandidates);
+        }
 
         return mBestFit;
     }
 
-    public PurityAdjuster purityAdjuster() { return mPurityAdjuster; }
+    public PurityAdjuster purityAdjuster()
+    {
+        return mPurityAdjuster;
+    }
 
     public void run()
     {
@@ -140,12 +158,35 @@ public class PurityPloidyFitter
             return;
         }
 
+        if(mFitMethod == NO_TUMOR)
+        {
+            mFinalPurityFit = convertNoTumorFit(mFinalPurityFit);
+        }
+
         if(mFinalPurityFit != mCopyNumberPurityFit)
         {
             buildCopyNumbers(mFinalPurityFit);
         }
+    }
 
-        determineFinalFit();
+    private FittedPurity convertNoTumorFit(final FittedPurity fittedPurity)
+    {
+        // find the purity 100% diploid solution
+        FittedPurity diploid100Perc = mCopyNumberFitCandidates.stream()
+                .filter(x -> abs(x.ploidy() - DIPLOID_PLOIDY) < 0.001)
+                .filter(x -> abs(x.purity() - 1.0) < 0.001)
+                .findFirst().orElse(null);
+
+        if(diploid100Perc != null)
+        {
+            return new FittedPurity(
+                    1.0, fittedPurity.normFactor(), DIPLOID_PLOIDY,
+                    diploid100Perc.score(), diploid100Perc.diploidProportion(), diploid100Perc.somaticPenalty());
+        }
+
+        return new FittedPurity(
+                1.0, fittedPurity.normFactor(), DIPLOID_PLOIDY,
+                fittedPurity.score(), fittedPurity.diploidProportion(), fittedPurity.somaticPenalty());
     }
 
     private void performCopyNumberFit()
@@ -175,12 +216,17 @@ public class PurityPloidyFitter
 
         Collections.sort(mCopyNumberFitCandidates);
 
-        FittedPurity lowestScoreFit = mCopyNumberFitCandidates.get(0);
-
-        mCopyNumberPurityFit = lowestScoreFit;
+        mCopyNumberPurityFit = mCopyNumberFitCandidates.get(0);
 
         List<FittedPurity> bestFitPerPurityCandidates = inRangeOfLowest(mCopyNumberPurityFit.score(), mCopyNumberFitCandidates);
         mFitPurityScore = FittedPurityScoreFactory.score(bestFitPerPurityCandidates);
+    }
+
+    private static boolean isCloseToDiploidAndHighPurity(final FittedPurity normalPurityFit)
+    {
+        return normalPurityFit.purity() > SOMATIC_FIT_TUMOR_ONLY_PURITY_MIN
+                && normalPurityFit.ploidy() > SOMATIC_FIT_TUMOR_ONLY_PLOIDY_MIN
+                && normalPurityFit.ploidy() < SOMATIC_FIT_TUMOR_ONLY_PLOIDY_MAX;
     }
 
     private void performSomaticFit()
@@ -190,10 +236,19 @@ public class PurityPloidyFitter
         FittedPurity lowestPurityFit = !diploidCandidates.isEmpty() ?
                 diploidCandidates.stream().min(Comparator.comparingDouble(FittedPurity::purity)).get() : mCopyNumberPurityFit;
 
-        boolean highlyDiploid = isHighlyDiploid(mFitPurityScore);
+        boolean highlyDiploid = isHighlyDiploid(mFitPurityScore); // max diploid proportion > 0.97
+
         if(mConfig.tumorOnlyMode() || mTargetedMode)
         {
-            if(mHasChimerism || highlyDiploidSomaticOrPanel(mCopyNumberPurityFit, highlyDiploid))
+            AneuploidyDetector aneuploidyDetector = new AneuploidyDetector(
+                    mObservedRegions, mSampleData.Amber.ChromosomeBafs, mSampleData.Cobalt.CobaltChromosomes);
+
+            boolean hasAneuploidy = aneuploidyDetector.hasAneuploidy();
+            boolean noSignificantAneuploidy = !hasAneuploidy;
+            boolean diploidHighPurity = isCloseToDiploidAndHighPurity(mCopyNumberPurityFit);
+            boolean significantContamination = ContaminationLevel > SOMATIC_FIT_CONTAMINATION_CUTOFF;
+
+            if(significantContamination || (noSignificantAneuploidy && (diploidHighPurity || highlyDiploid)))
             {
                 mSomaticPurityFit = mVariantPurityFitter.calcSomaticOnlyFit(mCopyNumberFitCandidates);
 
@@ -201,25 +256,32 @@ public class PurityPloidyFitter
                 {
                     mFinalPurityFit = mSomaticPurityFit;
                     mFitMethod = FittedPurityMethod.SOMATIC;
+                    PPL_LOGGER.debug("somatic fit found");
                 }
                 else
                 {
-                    // revert to the diploid, lowest purity fit
-                    mFinalPurityFit = ImmutableFittedPurity.builder()
-                            .purity(MIN_PURITY_DEFAULT)
-                            .ploidy(2)
-                            .normFactor(lowestPurityFit.normFactor())
-                            .score(lowestPurityFit.score())
-                            .diploidProportion(lowestPurityFit.diploidProportion())
-                            .somaticPenalty(0) // defaults for the rest
-                            .build();
-
+                    PPL_LOGGER.debug("somatic fit not found, reverting to lowest purity fit");
+                    mFinalPurityFit = new FittedPurity(
+                            MIN_PURITY_DEFAULT, lowestPurityFit.normFactor(),
+                            DIPLOID_PLOIDY, lowestPurityFit.score(), lowestPurityFit.diploidProportion(), 0);
                     mFitMethod = FittedPurityMethod.NO_TUMOR;
                 }
             }
             else
             {
-                mFinalPurityFit = mCopyNumberPurityFit;
+                FittedPurity bafFittedPurity = null;
+
+                if(hasAneuploidy && diploidHighPurity && !aneuploidyDetector.hasHighBafRegion())
+                {
+                    Double bafPurity = aneuploidyDetector.calculateBafPurity();
+
+                    if(bafPurity != null)
+                    {
+                        bafFittedPurity = findMatchedFittedPurity(bafPurity, mCopyNumberFitCandidates);
+                    }
+                }
+
+                mFinalPurityFit = bafFittedPurity != null ? bafFittedPurity : mCopyNumberPurityFit;
                 mFitMethod = FittedPurityMethod.NORMAL;
             }
 
@@ -280,35 +342,6 @@ public class PurityPloidyFitter
         }
     }
 
-    private void determineFinalFit()
-    {
-        if(mHasChimerism)
-            return;
-
-        if(!(mFitMethod == FittedPurityMethod.SOMATIC || mFitMethod == FittedPurityMethod.NO_TUMOR) || mFinalPurityFit == mCopyNumberPurityFit)
-            return;
-
-        // test the impact on deleted genes from a switch to use the somatic fit
-        double deletedPercent = calculateDeletedDepthWindows(mCopyNumbers);
-
-        if(deletedPercent >= MAX_SOMATIC_FIT_DELETED_PERC)
-        {
-            PPL_LOGGER.info(format("%s fit(purity=%.3f ploidy=%.3f) deleted DW percent(%.3f), reverting to normal fit(purity=%.3f ploidy=%.3f)",
-                    mFitMethod.toString().toLowerCase(), mFinalPurityFit.purity(), mFinalPurityFit.ploidy(), deletedPercent,
-                    mCopyNumberPurityFit.purity(), mCopyNumberPurityFit.ploidy()));
-
-            // re-build using the normal fit
-            mFinalPurityFit = mCopyNumberPurityFit;
-            mFitMethod = NORMAL;
-
-            buildCopyNumbers(mFinalPurityFit);
-        }
-        else
-        {
-            PPL_LOGGER.debug("somatic fit deleted DW percent({})", format("%.3f", deletedPercent));
-        }
-    }
-
     private void buildCopyNumbers(final FittedPurity fittedPurity)
     {
         mCopyNumbers.clear();
@@ -358,22 +391,15 @@ public class PurityPloidyFitter
     {
         return fittedPurity ->
         {
-            double absDifference = Math.abs(fittedPurity.score() - score);
-            double relDifference = Math.abs(absDifference / score);
+            double absDifference = abs(fittedPurity.score() - score);
+            double relDifference = abs(absDifference / score);
             return lessOrEqual(absDifference, ABS_RANGE) || lessOrEqual(relDifference, PERCENT_RANGE);
         };
     }
 
     public static BestFit buildGermlineBestFit()
     {
-        FittedPurity fittedPurity = ImmutableFittedPurity.builder()
-                .purity(1)
-                .ploidy(2)
-                .normFactor(1)
-                .diploidProportion(1)
-                .somaticPenalty(0)
-                .score(0)
-                .build();
+        FittedPurity fittedPurity = new FittedPurity(1.0, 1.0, 2.0, 0.0, 1.0, 0.0);
 
         FittedPurityScore score = ImmutableFittedPurityScore.builder()
                 .minPloidy(fittedPurity.ploidy())
@@ -385,5 +411,36 @@ public class PurityPloidyFitter
                 .build();
 
         return new BestFit(fittedPurity, score, NORMAL, List.of(fittedPurity));
+    }
+
+    public static FittedPurity findMatchedFittedPurity(double purity, final List<FittedPurity> allCandidates)
+    {
+        // find the closest purity with diploid ploidy
+        FittedPurity closestPurity = null;
+        double closestDiff = 0;
+        double purityEpsilon = PURITY_INCREMENT_DEFAULT * 0.25;
+
+        for(FittedPurity fittedPurity : allCandidates)
+        {
+            if(abs(fittedPurity.ploidy() - 2) > 0.005)
+            {
+                continue;
+            }
+
+            double diff = abs(fittedPurity.purity() - purity);
+
+            if(closestPurity == null || diff < closestDiff)
+            {
+                if(diff < purityEpsilon)
+                {
+                    return fittedPurity;
+                }
+
+                closestDiff = diff;
+                closestPurity = fittedPurity;
+            }
+        }
+
+        return closestPurity;
     }
 }

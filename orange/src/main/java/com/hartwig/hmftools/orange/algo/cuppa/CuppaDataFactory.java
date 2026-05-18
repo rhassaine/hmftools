@@ -16,19 +16,15 @@ import com.hartwig.hmftools.datamodel.cuppa.CuppaPrediction;
 import com.hartwig.hmftools.datamodel.cuppa.ImmutableCuppaData;
 import com.hartwig.hmftools.datamodel.cuppa.ImmutableCuppaPrediction;
 
-import org.jetbrains.annotations.NotNull;
-
 public final class CuppaDataFactory
 {
-    @NotNull
-    public static CuppaData create(@NotNull String cuppaVisDataTsv) throws Exception
+    public static CuppaData create(final String cuppaVisDataTsv) throws Exception
     {
         CuppaPredictions cuppaPredictions = CuppaPredictions.fromTsv(cuppaVisDataTsv);
         return CuppaDataFactory.createFromPredictions(cuppaPredictions);
     }
 
-    @NotNull
-    private static CuppaData createFromPredictions(@NotNull CuppaPredictions cuppaPredictions) throws Exception
+    private static CuppaData createFromPredictions(final CuppaPredictions cuppaPredictions) throws Exception
     {
         List<CuppaPrediction> predictions = convertCuppaPredictions(cuppaPredictions);
 
@@ -55,8 +51,7 @@ public final class CuppaDataFactory
                 .build();
     }
 
-    @NotNull
-    private static List<CuppaPrediction> convertCuppaPredictions(@NotNull CuppaPredictions cuppaPredictions)
+    private static List<CuppaPrediction> convertCuppaPredictions(final CuppaPredictions cuppaPredictions)
     {
         CuppaPredictions probabilitiesAllClassifiers = cuppaPredictions.subsetByDataType(DataType.PROB).sortByRank();
 
@@ -92,7 +87,7 @@ public final class CuppaDataFactory
     }
 
     @VisibleForTesting
-    static int getSvFeatureValue(@NotNull CuppaPredictions cuppaPredictions, @NotNull String featureName) throws Exception
+    static int getSvFeatureValue(final CuppaPredictions cuppaPredictions, final String featureName) throws Exception
     {
         // Feature values are replicated for each cancer type because the `cuppaPredictions` table is in long form.
         // Use `.findFirst()` to get a single value
@@ -103,13 +98,18 @@ public final class CuppaDataFactory
 
         return (int) Math.round(predictionEntry.FeatureValue);
     }
+
     static CuppaMode getCuppaMode(ClassifierName mainCombinedClassifierName) throws IllegalArgumentException
     {
-        if (mainCombinedClassifierName == ClassifierName.COMBINED) {
+        if (mainCombinedClassifierName == ClassifierName.COMBINED)
+        {
             return CuppaMode.WGTS;
-        } else if (mainCombinedClassifierName == ClassifierName.DNA_COMBINED) {
+        } else if (mainCombinedClassifierName == ClassifierName.DNA_COMBINED)
+        {
             return CuppaMode.WGS;
-        } else {
+        }
+        else
+        {
             throw new IllegalArgumentException("MainCombinedClassifierName should only be COMBINED or DNA_COMBINED");
         }
     }

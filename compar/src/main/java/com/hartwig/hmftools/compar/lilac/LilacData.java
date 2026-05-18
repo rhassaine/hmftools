@@ -24,6 +24,7 @@ import com.hartwig.hmftools.compar.ComparableItem;
 import com.hartwig.hmftools.compar.common.DiffThresholds;
 import com.hartwig.hmftools.compar.common.MatchLevel;
 import com.hartwig.hmftools.compar.common.Mismatch;
+import com.hartwig.hmftools.compar.driver.DriverData;
 
 public class LilacData implements ComparableItem
 {
@@ -47,7 +48,7 @@ public class LilacData implements ComparableItem
     @Override
     public String key()
     {
-        return "";
+        return QcData.genes();
     }
 
     @Override
@@ -65,17 +66,13 @@ public class LilacData implements ComparableItem
     }
 
     @Override
-    public boolean reportable() { return true; }
-
-    @Override
-    public boolean isPass() {
-        return true;
-    }
-
-    @Override
     public boolean matches(final ComparableItem other)
     {
-        // a single record for each sample
+        final LilacData otherData = (LilacData)other;
+
+        if(!QcData.genes().equals(otherData.QcData.genes()))
+            return false;
+
         return true;
     }
 
@@ -113,30 +110,30 @@ public class LilacData implements ComparableItem
         }
 
         // matches alleles in order when an allele is homozygous
-        List<LilacAllele> newAllelesToMatch = Lists.newArrayList(otherData.Alleles);
-        for(LilacAllele refAllele : Alleles)
+        List<LilacAllele> otherAllelesToMatch = Lists.newArrayList(otherData.Alleles);
+        for(LilacAllele allele : Alleles)
         {
-            LilacAllele matchingNewAllele =
-                    newAllelesToMatch.stream().filter(x -> x.allele().equals(refAllele.allele())).findFirst().orElse(null);
-            if(matchingNewAllele != null)
+            LilacAllele matchingOtherAllele =
+                    otherAllelesToMatch.stream().filter(x -> x.allele().equals(allele.allele())).findFirst().orElse(null);
+            if(matchingOtherAllele != null)
             {
                 List<String> temporaryDiffs = Lists.newArrayList();
-                checkDiff(temporaryDiffs, LilacAllele.FLD_MISSENSE, refAllele.somaticMissense(), matchingNewAllele.somaticMissense(), thresholds);
-                checkDiff(temporaryDiffs, LilacAllele.FLD_NFS, refAllele.somaticNonsenseOrFrameshift(),
-                        matchingNewAllele.somaticNonsenseOrFrameshift(), thresholds);
-                checkDiff(temporaryDiffs, LilacAllele.FLD_SPLICE, refAllele.somaticSplice(), matchingNewAllele.somaticSplice(), thresholds);
-                checkDiff(temporaryDiffs, LilacAllele.FLD_INDEL, refAllele.somaticInframeIndel(), matchingNewAllele.somaticInframeIndel(), thresholds);
-                checkDiff(temporaryDiffs, LilacAllele.FLD_TUMOR_CN, refAllele.tumorCopyNumber(), matchingNewAllele.tumorCopyNumber(), thresholds);
+                checkDiff(temporaryDiffs, LilacAllele.FLD_MISSENSE, allele.somaticMissense(), matchingOtherAllele.somaticMissense(), thresholds);
+                checkDiff(temporaryDiffs, LilacAllele.FLD_NFS, allele.somaticNonsenseOrFrameshift(),
+                        matchingOtherAllele.somaticNonsenseOrFrameshift(), thresholds);
+                checkDiff(temporaryDiffs, LilacAllele.FLD_SPLICE, allele.somaticSplice(), matchingOtherAllele.somaticSplice(), thresholds);
+                checkDiff(temporaryDiffs, LilacAllele.FLD_INDEL, allele.somaticInframeIndel(), matchingOtherAllele.somaticInframeIndel(), thresholds);
+                checkDiff(temporaryDiffs, LilacAllele.FLD_TUMOR_CN, allele.tumorCopyNumber(), matchingOtherAllele.tumorCopyNumber(), thresholds);
                 if(matchLevel == MatchLevel.DETAILED)
                 {
-                    checkDiff(temporaryDiffs, LilacAllele.FLD_REF_TOTAL, refAllele.refFragments(), matchingNewAllele.refFragments(), thresholds);
-                    checkDiff(temporaryDiffs, LilacAllele.FLD_TUMOR_TOTAL, refAllele.tumorFragments(), matchingNewAllele.tumorFragments(), thresholds);
-                    checkDiff(temporaryDiffs, LilacAllele.FLD_SYNON, refAllele.somaticSynonymous(), matchingNewAllele.somaticSynonymous(), thresholds);
+                    checkDiff(temporaryDiffs, LilacAllele.FLD_REF_TOTAL, allele.refFragments(), matchingOtherAllele.refFragments(), thresholds);
+                    checkDiff(temporaryDiffs, LilacAllele.FLD_TUMOR_TOTAL, allele.tumorFragments(), matchingOtherAllele.tumorFragments(), thresholds);
+                    checkDiff(temporaryDiffs, LilacAllele.FLD_SYNON, allele.somaticSynonymous(), matchingOtherAllele.somaticSynonymous(), thresholds);
 
                 }
 
-                temporaryDiffs.stream().map(d -> refAllele.allele() + ALLELE_DELIM + d).forEach(d -> diffs.add(d));
-                newAllelesToMatch.remove(matchingNewAllele);
+                temporaryDiffs.stream().map(d -> allele.allele() + ALLELE_DELIM + d).forEach(d -> diffs.add(d));
+                otherAllelesToMatch.remove(matchingOtherAllele);
             }
         }
 

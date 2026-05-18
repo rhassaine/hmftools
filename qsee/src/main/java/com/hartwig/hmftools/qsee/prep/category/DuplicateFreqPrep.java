@@ -1,72 +1,69 @@
 package com.hartwig.hmftools.qsee.prep.category;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 
 import com.hartwig.hmftools.common.redux.DuplicateFrequency;
+import com.hartwig.hmftools.qsee.common.BinnedFrequencies;
+import com.hartwig.hmftools.qsee.common.SampleType;
 import com.hartwig.hmftools.qsee.feature.Feature;
-import com.hartwig.hmftools.qsee.feature.FeatureKey;
 import com.hartwig.hmftools.qsee.feature.FeatureType;
 import com.hartwig.hmftools.qsee.feature.SourceTool;
 import com.hartwig.hmftools.qsee.prep.CategoryPrep;
-import com.hartwig.hmftools.qsee.prep.CommonPrepConfig;
+import com.hartwig.hmftools.qsee.prep.QseePrepConfig;
 
 public class DuplicateFreqPrep implements CategoryPrep
 {
-    private final CommonPrepConfig mConfig;
+    private final QseePrepConfig mConfig;
 
     private static final SourceTool SOURCE_TOOL = SourceTool.REDUX;
 
     private static final String FIELD_READ_COUNT = "ReadCount";
 
-    private static final int MAX_DUP_READS = 100;
-
-    public DuplicateFreqPrep(CommonPrepConfig config)
+    public DuplicateFreqPrep(QseePrepConfig config)
     {
         mConfig = config;
     }
 
     public SourceTool sourceTool() { return SOURCE_TOOL; }
+    public PrepCategory category() { return PrepCategory.DUPLICATE_FREQ; }
 
-    private List<DuplicateFrequency> loadDuplicateFrequencies(String sampleId) throws IOException
+    private List<DuplicateFrequency> loadDuplicateFrequencies(String sampleId, SampleType sampleType) throws IOException
     {
-        String baseDir = mConfig.getReduxDir(sampleId);
+        String baseDir = mConfig.getReduxDir(sampleId, sampleType);
         String filePath = DuplicateFrequency.generateFilename(baseDir, sampleId);
         return DuplicateFrequency.read(filePath);
     }
 
     private static List<Feature> normaliseAndBinCounts(List<DuplicateFrequency> dupFreqs)
     {
-        long totalCount = dupFreqs.stream().mapToLong(x -> x.Count).sum();
-        List<Feature> features = new ArrayList<>();
-        long aboveMaxDupReadsCount = 0;
+        long[] readGroupSizes = new long[dupFreqs.size()];
+        double[] frequencies = new double[dupFreqs.size()];
 
-        for(DuplicateFrequency dupFreq : dupFreqs)
+        for(int i = 0; i < dupFreqs.size(); i++)
         {
-            if(dupFreq.ReadCount < MAX_DUP_READS)
-            {
-                String featureName = FeatureKey.formSingleFieldName(FIELD_READ_COUNT, String.valueOf(dupFreq.ReadCount));
-                FeatureKey key = new FeatureKey(featureName, FeatureType.DUPLICATE_FREQ, SOURCE_TOOL);
-                features.add(new Feature(key, (double) dupFreq.Count / totalCount));
-            }
-            else
-            {
-                aboveMaxDupReadsCount += dupFreq.Count;
-            }
+            DuplicateFrequency valueFrequency = dupFreqs.get(i);
+            readGroupSizes[i] = valueFrequency.ReadCount;
+            frequencies[i] = valueFrequency.Count;
         }
 
-        String aboveMaxDupName = FeatureKey.formSingleFieldName(FIELD_READ_COUNT, String.format("≥%s",MAX_DUP_READS));
-        FeatureKey aboveMaxDupKey = new FeatureKey(aboveMaxDupName, FeatureType.DUPLICATE_FREQ, SOURCE_TOOL);
-        features.add(new Feature(aboveMaxDupKey, (double) aboveMaxDupReadsCount / totalCount));
+        BinnedFrequencies readGroupSizeFrequencies = new BinnedFrequencies(readGroupSizes, frequencies);
+
+        List<Feature> features = readGroupSizeFrequencies.formProportionalDensityFeatures(
+                FIELD_READ_COUNT, FeatureType.DUPLICATE_FREQ, SOURCE_TOOL);
 
         return features;
     }
 
     @Override
-    public List<Feature> extractSampleData(String sampleId) throws IOException
+    public List<Feature> extractSampleData(String sampleId, SampleType sampleType) throws IOException
     {
-        List<DuplicateFrequency> dupFreqs = loadDuplicateFrequencies(sampleId);
+        if(sampleType != SampleType.TUMOR)
+        {
+            return List.of();
+        }
+
+        List<DuplicateFrequency> dupFreqs = loadDuplicateFrequencies(sampleId, sampleType);
         List<Feature> features = normaliseAndBinCounts(dupFreqs);
         return features;
     }

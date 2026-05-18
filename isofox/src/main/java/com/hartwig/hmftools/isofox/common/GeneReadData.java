@@ -11,27 +11,28 @@ import java.util.List;
 
 import com.google.common.collect.Lists;
 import com.hartwig.hmftools.common.ensemblcache.EnsemblDataCache;
+import com.hartwig.hmftools.common.gene.GeneData;
 import com.hartwig.hmftools.common.gene.TranscriptData;
 
 public class GeneReadData
 {
-    public final com.hartwig.hmftools.common.gene.GeneData GeneData;
+    public final GeneData Gene;
 
     private final List<RegionReadData> mExonRegions; // set of unique exons ie with differing start and end positions
 
     private final List<TranscriptData> mTranscripts;
     private boolean mHasUnsplicedRegions;
 
-    public GeneReadData(final com.hartwig.hmftools.common.gene.GeneData geneData)
+    public GeneReadData(final GeneData geneData)
     {
-        GeneData = geneData;
+        Gene = geneData;
 
         mExonRegions = Lists.newArrayList();
         mTranscripts = Lists.newArrayList();
         mHasUnsplicedRegions = false;
     }
 
-    public String name() { return GeneData.GeneName;}
+    public String name() { return Gene.GeneName;}
 
     public final List<TranscriptData> getTranscripts() { return mTranscripts; }
     public void setTranscripts(final List<TranscriptData> transDataList)
@@ -101,22 +102,22 @@ public class GeneReadData
         return commonExonicRegions.stream().mapToInt(x -> x[SE_END] - x[SE_START]).sum();
     }
 
-    public List<RegionReadData> findOverlappingRegions(final ReadRecord read)
+    public List<RegionReadData> findOverlappingRegions(final Read read)
     {
-        return ReadRecord.findOverlappingRegions(mExonRegions, read);
+        return Read.findOverlappingRegions(mExonRegions, read);
     }
 
     public String toString()
     {
         return String.format("%s:%s location(%s:%d -> %d) trans(%d)",
-                GeneData.GeneId, GeneData.GeneName, GeneData.Chromosome, GeneData.GeneStart, GeneData.GeneEnd, mTranscripts.size());
+                Gene.GeneId, Gene.GeneName, Gene.Chromosome, Gene.GeneStart, Gene.GeneEnd, mTranscripts.size());
     }
 
-    public static List<GeneReadData> createGeneReadData(final List<com.hartwig.hmftools.common.gene.GeneData> geneDataList, final EnsemblDataCache geneTransCache)
+    public static List<GeneReadData> createGeneReadData(final List<GeneData> geneDataList, final EnsemblDataCache geneTransCache)
     {
         final List<GeneReadData> geneReadDataList = Lists.newArrayList();
 
-        for(com.hartwig.hmftools.common.gene.GeneData geneData : geneDataList)
+        for(GeneData geneData : geneDataList)
         {
             GeneReadData geneReadData = new GeneReadData(geneData);
 
