@@ -35,6 +35,7 @@ public class PartitionChecker
     private final SAMFileWriter mBamWriter;
     private final FragmentCache mFragmentCache;
     private final NonRefContigFilter mNonRefContigFilter;
+    private final AlignmentTagCalculator mAlignmentTagCalculator;
 
     private final BamSlicer mBamSlicer;
     private ChrBaseRegion mRegion;
@@ -50,8 +51,9 @@ public class PartitionChecker
 
     public PartitionChecker(
             final CheckConfig config, final FragmentCache fragmentCache, final SamReader samReader, final SAMFileWriter bamWriter,
-            final NonRefContigFilter nonRefContigFilter)
+            final NonRefContigFilter nonRefContigFilter, final AlignmentTagCalculator alignmentTagCalculator)
     {
+        mAlignmentTagCalculator = alignmentTagCalculator;
         mConfig = config;
         mSamReader = samReader;
         mBamWriter = bamWriter;
@@ -269,6 +271,9 @@ public class PartitionChecker
 
         if(mNonRefContigFilter != null && !mNonRefContigFilter.apply(read))
             return;
+
+        if(mAlignmentTagCalculator != null)
+            mAlignmentTagCalculator.recalculate(read);
 
         mBamWriter.addAlignment(read);
     }

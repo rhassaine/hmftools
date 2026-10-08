@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 
 import com.hartwig.hmftools.bamtools.common.PartitionTask;
+import com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource;
 import com.hartwig.hmftools.common.region.ChrBaseRegion;
 import com.hartwig.hmftools.common.perf.TaskQueue;
 
@@ -31,6 +32,7 @@ public class PartitionThread extends Thread
     private final String mBamFilename;
     private final boolean mReverseBqsr;
     private final NonRefContigFilter mNonRefContigFilter;
+    private final AlignmentTagCalculator mAlignmentTagCalculator;
 
     protected static final String UNSORTED_BAM_ID = "unsorted";
     protected static final String SORTED_BAM_ID = "sorted";
@@ -40,6 +42,10 @@ public class PartitionThread extends Thread
             final NonRefContigFilter nonRefContigFilter)
     {
         mNonRefContigFilter = nonRefContigFilter;
+
+        // NM and MD are recalculated against the ref genome when writing with its dictionary, with a reader per thread
+        mAlignmentTagCalculator = nonRefContigFilter != null && config.writeBam()
+                ? new AlignmentTagCalculator(RefGenomeSource.loadRefGenome(config.RefGenomeFile)) : null;
         mPartitions = partitions;
         mReverseBqsr = config.ReverseBqsr;
 
@@ -67,7 +73,8 @@ public class PartitionThread extends Thread
             mBamFilename = "";
         }
 
-        mPartitionChecker = new PartitionChecker(config, fragmentCache, mSamReader, mBamWriter, nonRefContigFilter);
+        mPartitionChecker = new PartitionChecker(
+                config, fragmentCache, mSamReader, mBamWriter, nonRefContigFilter, mAlignmentTagCalculator);
     }
 
     public static List<ChrBaseRegion> splitRegionsIntoPartitions(final CheckConfig config)
@@ -78,6 +85,7 @@ public class PartitionThread extends Thread
 
     public FragmentStats stats() { return mPartitionChecker.stats(); }
     public String bamFilename() { return mBamFilename; }
+    public AlignmentTagCalculator alignmentTagCalculator() { return mAlignmentTagCalculator; }
 
     @Override
     public void run()
@@ -127,6 +135,9 @@ public class PartitionThread extends Thread
     {
         if(mNonRefContigFilter != null && !mNonRefContigFilter.apply(record))
             return;
+
+        if(mAlignmentTagCalculator != null)
+            mAlignmentTagCalculator.recalculate(record);
 
         mBamWriter.addAlignment(record);
     }

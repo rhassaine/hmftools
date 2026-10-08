@@ -116,7 +116,16 @@ public class BamChecker
         partitionThreads.forEach(x -> x.close());
 
         if(nonRefContigFilter != null)
+        {
             nonRefContigFilter.logStats();
+
+            long recalculated = partitionThreads.stream()
+                    .filter(x -> x.alignmentTagCalculator() != null).mapToLong(x -> x.alignmentTagCalculator().recalculatedCount()).sum();
+            long nmChanged = partitionThreads.stream()
+                    .filter(x -> x.alignmentTagCalculator() != null).mapToLong(x -> x.alignmentTagCalculator().nmChangedCount()).sum();
+
+            BT_LOGGER.info("alignment tags recalculated against ref genome: reads({}) NM changed({})", recalculated, nmChanged);
+        }
 
         if(mConfig.writeBam())
         {
