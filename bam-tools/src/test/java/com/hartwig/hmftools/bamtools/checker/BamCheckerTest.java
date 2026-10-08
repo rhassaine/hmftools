@@ -2,6 +2,7 @@ package com.hartwig.hmftools.bamtools.checker;
 
 import static com.hartwig.hmftools.bamtools.checker.Fragment.convertHardClips;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.ALIGNMENT_SCORE_ATTRIBUTE;
+import static com.hartwig.hmftools.common.bam.SamRecordUtils.BQSR_ORIGINAL_QUALS;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.MATE_CIGAR_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.NO_CIGAR;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.NUM_MUTATONS_ATTRIBUTE;
@@ -696,5 +697,21 @@ public class BamCheckerTest
         assertTrue(read1.getReadUnmappedFlag() && read2.getReadUnmappedFlag());
         assertNull(read1.getStringAttribute(MATE_CIGAR_ATTRIBUTE));
         assertNull(read2.getStringAttribute(MATE_CIGAR_ATTRIBUTE));
+    }
+
+    @Test
+    public void testReverseBqsrQuals()
+    {
+        SAMRecord read = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_1, 100, TEST_READ_BASES, TEST_CIGAR, CHR_1, 300,
+                false, false, null);
+
+        String originalQuals = "5555555555AAAAAAAAAA"; // Phred+33: 20 and 32
+        read.setAttribute(BQSR_ORIGINAL_QUALS, originalQuals);
+
+        PartitionChecker.reverseBqsrQuals(read);
+
+        assertEquals(originalQuals, read.getBaseQualityString());
+        assertFalse(read.hasAttribute(BQSR_ORIGINAL_QUALS));
     }
 }

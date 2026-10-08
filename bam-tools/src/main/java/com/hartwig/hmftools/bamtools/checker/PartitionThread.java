@@ -29,6 +29,7 @@ public class PartitionThread extends Thread
 
     private final PartitionChecker mPartitionChecker;
     private final String mBamFilename;
+    private final boolean mReverseBqsr;
 
     protected static final String UNSORTED_BAM_ID = "unsorted";
     protected static final String SORTED_BAM_ID = "sorted";
@@ -37,6 +38,7 @@ public class PartitionThread extends Thread
             final CheckConfig config, final FragmentCache fragmentCache, final TaskQueue partitions, final int threadId)
     {
         mPartitions = partitions;
+        mReverseBqsr = config.ReverseBqsr;
 
         mSamReader = SamReaderFactory.makeDefault()
                 .referenceSequence(new File(config.RefGenomeFile))
@@ -102,6 +104,10 @@ public class PartitionThread extends Thread
         while(iterator.hasNext())
         {
             SAMRecord record = iterator.next();
+
+            if(mReverseBqsr)
+                PartitionChecker.reverseBqsrQuals(record);
+
             mBamWriter.addAlignment(record);
         }
     }

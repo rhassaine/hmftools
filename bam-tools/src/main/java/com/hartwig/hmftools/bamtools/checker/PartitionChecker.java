@@ -179,7 +179,7 @@ public class PartitionChecker
 
     private static final String MARK_DUPS_TAG = "MarkDuplicates";
 
-    private void reverseBqsrQuals(final SAMRecord read)
+    protected static void reverseBqsrQuals(final SAMRecord read)
     {
         String originalQualsStr = read.getStringAttribute(BQSR_ORIGINAL_QUALS);
 
