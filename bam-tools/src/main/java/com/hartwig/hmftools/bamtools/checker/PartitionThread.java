@@ -30,13 +30,16 @@ public class PartitionThread extends Thread
     private final PartitionChecker mPartitionChecker;
     private final String mBamFilename;
     private final boolean mReverseBqsr;
+    private final NonRefContigFilter mNonRefContigFilter;
 
     protected static final String UNSORTED_BAM_ID = "unsorted";
     protected static final String SORTED_BAM_ID = "sorted";
 
     public PartitionThread(
-            final CheckConfig config, final FragmentCache fragmentCache, final TaskQueue partitions, final int threadId)
+            final CheckConfig config, final FragmentCache fragmentCache, final TaskQueue partitions, final int threadId,
+            final NonRefContigFilter nonRefContigFilter)
     {
+        mNonRefContigFilter = nonRefContigFilter;
         mPartitions = partitions;
         mReverseBqsr = config.ReverseBqsr;
 
@@ -50,7 +53,10 @@ public class PartitionThread extends Thread
             // create a BAM writer per thread
             mBamFilename = config.formFilename(format("%s_%02d", UNSORTED_BAM_ID, threadId), BAM_EXTENSION);
 
-            SAMFileHeader fileHeader = mSamReader.getFileHeader().clone();
+            // with the ref genome dictionary, the writer resolves each record's contigs by name against it
+            SAMFileHeader fileHeader = mNonRefContigFilter != null
+                    ? NonRefContigFilter.formOutputHeader(mSamReader.getFileHeader(), config.RefDictionary)
+                    : mSamReader.getFileHeader().clone();
             fileHeader.setSortOrder(SAMFileHeader.SortOrder.unsorted);
 
             mBamWriter = new SAMFileWriterFactory().makeBAMWriter(fileHeader, false, new File(mBamFilename));
@@ -61,7 +67,7 @@ public class PartitionThread extends Thread
             mBamFilename = "";
         }
 
-        mPartitionChecker = new PartitionChecker(config, fragmentCache, mSamReader, mBamWriter);
+        mPartitionChecker = new PartitionChecker(config, fragmentCache, mSamReader, mBamWriter, nonRefContigFilter);
     }
 
     public static List<ChrBaseRegion> splitRegionsIntoPartitions(final CheckConfig config)
@@ -108,13 +114,21 @@ public class PartitionThread extends Thread
             if(mReverseBqsr)
                 PartitionChecker.reverseBqsrQuals(record);
 
-            mBamWriter.addAlignment(record);
+            writeRecord(record);
         }
     }
 
     public void writeIncompleteReads(final List<SAMRecord> reads)
     {
-        reads.forEach(x -> mBamWriter.addAlignment(x));
+        reads.forEach(x -> writeRecord(x));
+    }
+
+    private void writeRecord(final SAMRecord record)
+    {
+        if(mNonRefContigFilter != null && !mNonRefContigFilter.apply(record))
+            return;
+
+        mBamWriter.addAlignment(record);
     }
 
     public void close()

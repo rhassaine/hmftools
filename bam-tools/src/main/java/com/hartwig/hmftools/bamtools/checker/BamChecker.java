@@ -63,7 +63,17 @@ public class BamChecker
 
         FragmentCache fragmentCache = new FragmentCache(fileHeader);
 
-        List<PartitionThread> partitionThreads = createPartitionThreads(fragmentCache);
+        NonRefContigFilter nonRefContigFilter = null;
+
+        if(mConfig.WriteRefDictionary)
+        {
+            if(!NonRefContigFilter.checkContigLengths(fileHeader, mConfig.RefDictionary))
+                System.exit(1);
+
+            nonRefContigFilter = new NonRefContigFilter(mConfig.RefDictionary);
+        }
+
+        List<PartitionThread> partitionThreads = createPartitionThreads(fragmentCache, nonRefContigFilter);
         List<Thread> allThreads = Lists.newArrayList(partitionThreads);
 
         if(!runThreadTasks(allThreads))
@@ -105,6 +115,9 @@ public class BamChecker
 
         partitionThreads.forEach(x -> x.close());
 
+        if(nonRefContigFilter != null)
+            nonRefContigFilter.logStats();
+
         if(mConfig.writeBam())
         {
             finaliseBam(partitionThreads);
@@ -113,7 +126,8 @@ public class BamChecker
         BT_LOGGER.info("BamChecker complete, mins({})", runTimeMinsStr(startTimeMs));
     }
 
-    private List<PartitionThread> createPartitionThreads(final FragmentCache fragmentCache)
+    private List<PartitionThread> createPartitionThreads(
+            final FragmentCache fragmentCache, final NonRefContigFilter nonRefContigFilter)
     {
         List<PartitionThread> partitionThreads = Lists.newArrayListWithCapacity(mConfig.Threads);
 
@@ -131,7 +145,7 @@ public class BamChecker
 
         for(int i = 0; i < mConfig.Threads; ++i)
         {
-            PartitionThread partitionThread = new PartitionThread(mConfig, fragmentCache, taskQueue, i);
+            PartitionThread partitionThread = new PartitionThread(mConfig, fragmentCache, taskQueue, i, nonRefContigFilter);
             partitionThreads.add(partitionThread);
         }
 

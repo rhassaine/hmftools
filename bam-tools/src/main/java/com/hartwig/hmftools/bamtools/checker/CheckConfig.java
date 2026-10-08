@@ -39,6 +39,7 @@ import com.hartwig.hmftools.common.genome.refgenome.RefGenomeVersion;
 import com.hartwig.hmftools.common.region.SpecificRegions;
 import com.hartwig.hmftools.common.utils.config.ConfigBuilder;
 
+import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SAMSequenceRecord;
 import htsjdk.samtools.ValidationStringency;
 
@@ -59,6 +60,8 @@ public class CheckConfig
     public final boolean SkipUnmapped;
     public final boolean ReverseBqsr;
     public final boolean DropIncompleteFragments;
+    public final boolean WriteRefDictionary;
+    public final SAMSequenceDictionary RefDictionary;
     public final int SortThreadMemory;
     public final ValidationStringency BamStringency;
 
@@ -75,6 +78,7 @@ public class CheckConfig
     public static final String SKIP_UNMAPPED = "skip_unmapped";
     public static final String REVERSE_BQSR = "bqsr_reverse";
     public static final String CONVERT_HARD_CLIPS = "convert_hard_clips";
+    public static final String WRITE_REF_DICTIONARY = "write_ref_dict";
     public static final String MIN_ALIGNMENT_SCORE = "min_align_score";
     public static final String SORT_THREAD_MEMORY = "sort_thread_mem";
 
@@ -114,8 +118,9 @@ public class CheckConfig
         Params.ConvertHardClips = configBuilder.hasFlag(CONVERT_HARD_CLIPS);
 
         RefGenomeSource refGenome = RefGenomeSource.loadRefGenome(RefGenomeFile);
+        RefDictionary = refGenome.refGenomeFile().getSequenceDictionary();
 
-        for(SAMSequenceRecord sequenceRecord : refGenome.refGenomeFile().getSequenceDictionary().getSequences())
+        for(SAMSequenceRecord sequenceRecord : RefDictionary.getSequences())
         {
             Params.ValidContigs.add(sequenceRecord.getSequenceName());
         }
@@ -129,6 +134,7 @@ public class CheckConfig
         LogReadIds = parseLogReadIds(configBuilder);
 
         ReverseBqsr = configBuilder.hasFlag(REVERSE_BQSR);
+        WriteRefDictionary = configBuilder.hasFlag(WRITE_REF_DICTIONARY);
 
         PerfDebug = configBuilder.hasFlag(PERF_DEBUG);
         SkipUnmapped = configBuilder.hasFlag(SKIP_UNMAPPED);
@@ -177,6 +183,10 @@ public class CheckConfig
 
         configBuilder.addFlag(REVERSE_BQSR, "Reverse BQSR");
         configBuilder.addFlag(CONVERT_HARD_CLIPS, "Convert hard to soft-clips");
+
+        configBuilder.addFlag(
+                WRITE_REF_DICTIONARY,
+                "Write the output BAM with the ref genome sequence dictionary, unmapping or dropping reads on contigs absent from it");
 
         configBuilder.addInteger(CFG_LOG_READ_COUNT, "Log partition processed read count frequency", LOG_READ_COUNT);
         configBuilder.addInteger(SORT_THREAD_MEMORY, "Memory per sort thread (value in GB)", DEFAULT_SORT_THREAD_MEMORY);

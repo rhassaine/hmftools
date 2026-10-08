@@ -34,6 +34,7 @@ public class PartitionChecker
     private final SamReader mSamReader;
     private final SAMFileWriter mBamWriter;
     private final FragmentCache mFragmentCache;
+    private final NonRefContigFilter mNonRefContigFilter;
 
     private final BamSlicer mBamSlicer;
     private ChrBaseRegion mRegion;
@@ -48,12 +49,14 @@ public class PartitionChecker
     private final boolean mLogReadIds;
 
     public PartitionChecker(
-            final CheckConfig config, final FragmentCache fragmentCache, final SamReader samReader, final SAMFileWriter bamWriter)
+            final CheckConfig config, final FragmentCache fragmentCache, final SamReader samReader, final SAMFileWriter bamWriter,
+            final NonRefContigFilter nonRefContigFilter)
     {
         mConfig = config;
         mSamReader = samReader;
         mBamWriter = bamWriter;
         mFragmentCache = fragmentCache;
+        mNonRefContigFilter = nonRefContigFilter;
 
         mRegion = null;
 
@@ -261,7 +264,12 @@ public class PartitionChecker
 
     private void writeRecord(final SAMRecord read)
     {
-        if(mBamWriter != null)
-            mBamWriter.addAlignment(read);
+        if(mBamWriter == null)
+            return;
+
+        if(mNonRefContigFilter != null && !mNonRefContigFilter.apply(read))
+            return;
+
+        mBamWriter.addAlignment(read);
     }
 }
