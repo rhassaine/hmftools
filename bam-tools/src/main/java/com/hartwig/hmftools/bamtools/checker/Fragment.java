@@ -29,6 +29,8 @@ import com.hartwig.hmftools.common.bam.SupplementaryReadData;
 import com.hartwig.hmftools.common.codon.Nucleotides;
 import com.hartwig.hmftools.common.utils.Arrays;
 
+import org.jetbrains.annotations.Nullable;
+
 import htsjdk.samtools.Cigar;
 import htsjdk.samtools.CigarElement;
 import htsjdk.samtools.CigarOperator;
@@ -417,6 +419,8 @@ public class Fragment
         SAMRecord mappedRead = !mFirstUnmapped ? firstPrimary : secondPrimary;
         SAMRecord unmappedRead = mFirstUnmapped ? firstPrimary : secondPrimary;
 
+        setMappedSupplementaryMateUnmapped(mappedRead);
+
         if(mappedRead != null)
         {
             mappedRead.setProperPairFlag(false);
@@ -434,9 +438,53 @@ public class Fragment
             unmappedRead.setInferredInsertSize(0);
             unmappedRead.setReadUnmappedFlag(true);
             unmappedRead.setMappingQuality(0);
-            unmappedRead.setReferenceIndex(mappedRead.getReferenceIndex());
-            unmappedRead.setAlignmentStart(mappedRead.getAlignmentStart());
             unmappedRead.setCigarString(NO_CIGAR);
+
+            if(mappedRead != null)
+            {
+                unmappedRead.setReferenceIndex(mappedRead.getReferenceIndex());
+                unmappedRead.setAlignmentStart(mappedRead.getAlignmentStart());
+            }
+            else
+            {
+                // defensive: place at the mapped primary as recorded in the mate fields
+                unmappedRead.setReferenceIndex(unmappedRead.getMateReferenceIndex());
+                unmappedRead.setAlignmentStart(unmappedRead.getMateAlignmentStart());
+            }
+        }
+    }
+
+    private void setMappedSupplementaryMateUnmapped(@Nullable final SAMRecord mappedRead)
+    {
+        // supplementaries of the mapped read now have an unmapped mate, which is placed at the mapped read's primary
+        boolean mappedIsFirst = !mFirstUnmapped;
+
+        for(SAMRecord read : mReads)
+        {
+            if(!read.getSupplementaryAlignmentFlag() || read.getFirstOfPairFlag() != mappedIsFirst)
+                continue;
+
+            read.setProperPairFlag(false);
+            read.setInferredInsertSize(0);
+            read.setMateUnmappedFlag(true);
+            read.setAttribute(MATE_CIGAR_ATTRIBUTE, null);
+
+            if(mappedRead != null)
+            {
+                read.setMateReferenceIndex(mappedRead.getReferenceIndex());
+                read.setMateAlignmentStart(mappedRead.getAlignmentStart());
+            }
+            else
+            {
+                // the primary was written in an earlier batch, so take its location from the first SA entry
+                SupplementaryReadData primaryData = SupplementaryReadData.extractAlignment(read);
+
+                if(primaryData != null)
+                {
+                    read.setMateReferenceName(primaryData.Chromosome);
+                    read.setMateAlignmentStart(primaryData.Position);
+                }
+            }
         }
     }
 

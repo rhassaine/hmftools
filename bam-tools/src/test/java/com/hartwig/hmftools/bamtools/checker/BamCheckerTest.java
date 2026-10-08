@@ -586,4 +586,75 @@ public class BamCheckerTest
 
         assertEquals(primaryReadBases.getBytes().length, read.getReadBases().length);
     }
+
+    @Test
+    public void testMappedSupplementaryWithUnmappedMate()
+    {
+        // R2 is on an invalid contig so is unmapped, and R1's supplementary must then point at an unmapped mate placed at R1
+        SAMRecord read1 = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_1, 100, TEST_READ_BASES, TEST_CIGAR, CHR_2, 300,
+                false, false, new SupplementaryReadData(CHR_1, 500, SUPP_POS_STRAND, TEST_CIGAR, 60));
+
+        SAMRecord supp1 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_1, 500, TEST_READ_BASES, TEST_CIGAR, CHR_2, 300,
+                false, true, new SupplementaryReadData(CHR_1, 100, SUPP_POS_STRAND, TEST_CIGAR, 60));
+        supp1.setAttribute(MATE_CIGAR_ATTRIBUTE, TEST_CIGAR);
+
+        SAMRecord read2 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_2, 300, TEST_READ_BASES, TEST_CIGAR, CHR_1, 100,
+                true, false, null);
+        SamRecordTestUtils.flipFirstInPair(read2);
+
+        Fragment fragment = new Fragment(read1);
+        fragment.addRead(supp1);
+        fragment.addRead(read2);
+
+        List<SAMRecord> reads = fragment.extractCompleteReads();
+        assertEquals(3, reads.size());
+        assertTrue(fragment.isComplete());
+
+        assertTrue(read2.getReadUnmappedFlag());
+        assertEquals(CHR_1, read2.getReferenceName());
+        assertEquals(100, read2.getAlignmentStart());
+
+        assertTrue(supp1.getMateUnmappedFlag());
+        assertFalse(supp1.getProperPairFlag());
+        assertEquals(CHR_1, supp1.getMateReferenceName());
+        assertEquals(100, supp1.getMateAlignmentStart());
+    }
+
+    @Test
+    public void testLateSupplementaryWithUnmappedMate()
+    {
+        // the primaries are written first, then R1's supplementary arrives from another partition via the fragment cache
+        SAMRecord read1 = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_1, 100, TEST_READ_BASES, TEST_CIGAR, CHR_2, 300,
+                false, false, new SupplementaryReadData(CHR_1, 5000, SUPP_POS_STRAND, TEST_CIGAR, 60));
+
+        SAMRecord read2 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_2, 300, TEST_READ_BASES, TEST_CIGAR, CHR_1, 100,
+                true, false, null);
+        SamRecordTestUtils.flipFirstInPair(read2);
+
+        SAMRecord supp1 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_1, 5000, TEST_READ_BASES, TEST_CIGAR, CHR_2, 300,
+                false, true, new SupplementaryReadData(CHR_1, 100, SUPP_POS_STRAND, TEST_CIGAR, 60));
+
+        FragmentCache fragmentCache = new FragmentCache(null);
+
+        Fragment fragment = new Fragment(read1);
+        fragment.addRead(read2);
+        assertEquals(2, fragment.extractCompleteReads().size());
+        assertFalse(fragment.isComplete());
+
+        assertTrue(fragmentCache.handleIncompleteFragments(List.of(fragment)).isEmpty());
+
+        List<SAMRecord> completeReads = fragmentCache.handleIncompleteFragments(List.of(new Fragment(supp1)));
+        assertEquals(1, completeReads.size());
+        assertEquals(0, fragmentCache.fragmentCount());
+
+        assertTrue(supp1.getMateUnmappedFlag());
+        assertEquals(CHR_1, supp1.getMateReferenceName());
+        assertEquals(100, supp1.getMateAlignmentStart());
+    }
 }
