@@ -311,14 +311,13 @@ public class Fragment
         {
             mMateCigarFixed |= !read.hasAttribute(MATE_CIGAR_ATTRIBUTE);
 
-            if(read.getFirstOfPairFlag())
-            {
-                read.setAttribute(MATE_CIGAR_ATTRIBUTE, mSecondPrimaryCigar);
-            }
+            String mateCigar = read.getFirstOfPairFlag() ? mSecondPrimaryCigar : mFirstPrimaryCigar;
+
+            // an unmapped mate has no CIGAR, and MC:Z:* is not valid
+            if(read.getMateUnmappedFlag() || NO_CIGAR.equals(mateCigar))
+                read.setAttribute(MATE_CIGAR_ATTRIBUTE, null);
             else
-            {
-                read.setAttribute(MATE_CIGAR_ATTRIBUTE, mFirstPrimaryCigar);
-            }
+                read.setAttribute(MATE_CIGAR_ATTRIBUTE, mateCigar);
         }
     }
 

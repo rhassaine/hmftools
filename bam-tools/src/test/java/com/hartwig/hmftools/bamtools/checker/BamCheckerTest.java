@@ -657,4 +657,44 @@ public class BamCheckerTest
         assertEquals(CHR_1, supp1.getMateReferenceName());
         assertEquals(100, supp1.getMateAlignmentStart());
     }
+
+    @Test
+    public void testNoMateCigarForUnmappedMate()
+    {
+        SAMRecord read1 = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_1, 100, TEST_READ_BASES, TEST_CIGAR, CHR_2, 300,
+                false, false, null);
+
+        SAMRecord read2 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_2, 300, TEST_READ_BASES, "5S15M", CHR_1, 100,
+                true, false, null);
+        SamRecordTestUtils.flipFirstInPair(read2);
+
+        Fragment fragment = new Fragment(read1);
+        fragment.addRead(read2);
+        assertEquals(2, fragment.extractCompleteReads().size());
+
+        // the mapped read's mate is unmapped so it has no MC, while the unmapped read's mate is mapped
+        assertTrue(read1.getMateUnmappedFlag());
+        assertNull(read1.getStringAttribute(MATE_CIGAR_ATTRIBUTE));
+        assertEquals(TEST_CIGAR, read2.getStringAttribute(MATE_CIGAR_ATTRIBUTE));
+
+        // both on invalid contigs, so both fully unmapped with no MC
+        read1 = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_2, 100, TEST_READ_BASES, TEST_CIGAR, CHR_3, 300,
+                false, false, null);
+
+        read2 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_3, 300, TEST_READ_BASES, TEST_CIGAR, CHR_2, 100,
+                true, false, null);
+        SamRecordTestUtils.flipFirstInPair(read2);
+
+        fragment = new Fragment(read1);
+        fragment.addRead(read2);
+        assertEquals(2, fragment.extractCompleteReads().size());
+
+        assertTrue(read1.getReadUnmappedFlag() && read2.getReadUnmappedFlag());
+        assertNull(read1.getStringAttribute(MATE_CIGAR_ATTRIBUTE));
+        assertNull(read2.getStringAttribute(MATE_CIGAR_ATTRIBUTE));
+    }
 }
