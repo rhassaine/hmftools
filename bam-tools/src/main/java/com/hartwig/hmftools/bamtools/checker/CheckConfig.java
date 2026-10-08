@@ -30,8 +30,10 @@ import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.filenamePar
 import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.parseOutputDir;
 import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.pathFromFile;
 
+import java.io.File;
 import java.util.List;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.hartwig.hmftools.common.bam.BamUtils;
 import com.hartwig.hmftools.common.bamops.BamToolName;
 import com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource;
@@ -39,9 +41,14 @@ import com.hartwig.hmftools.common.genome.refgenome.RefGenomeVersion;
 import com.hartwig.hmftools.common.region.SpecificRegions;
 import com.hartwig.hmftools.common.utils.config.ConfigBuilder;
 
+import org.jetbrains.annotations.Nullable;
+
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SAMSequenceRecord;
 import htsjdk.samtools.ValidationStringency;
+import htsjdk.samtools.reference.FastaSequenceIndex;
+import htsjdk.samtools.reference.FastaSequenceIndexEntry;
+import htsjdk.samtools.util.FileExtensions;
 
 public class CheckConfig
 {
@@ -118,7 +125,14 @@ public class CheckConfig
         Params.ConvertHardClips = configBuilder.hasFlag(CONVERT_HARD_CLIPS);
 
         RefGenomeSource refGenome = RefGenomeSource.loadRefGenome(RefGenomeFile);
-        RefDictionary = refGenome.refGenomeFile().getSequenceDictionary();
+
+        if(refGenome == null)
+        {
+            BT_LOGGER.error("failed to load ref genome({}), check the FASTA and its .fai index", RefGenomeFile);
+            System.exit(1);
+        }
+
+        RefDictionary = loadRefDictionary(RefGenomeFile, refGenome.refGenomeFile().getSequenceDictionary());
 
         for(SAMSequenceRecord sequenceRecord : RefDictionary.getSequences())
         {
@@ -147,6 +161,30 @@ public class CheckConfig
 
         LOG_READ_COUNT = configBuilder.getInteger(CFG_LOG_READ_COUNT);
         SortThreadMemory = configBuilder.getInteger(SORT_THREAD_MEMORY);
+    }
+
+    @VisibleForTesting
+    public static SAMSequenceDictionary loadRefDictionary(final String refGenomeFile, @Nullable final SAMSequenceDictionary refDictionary)
+    {
+        if(refDictionary != null && !refDictionary.isEmpty())
+            return refDictionary;
+
+        // fall back to the FASTA index, which has contig names and lengths but no MD5 checksums
+        File indexFile = new File(refGenomeFile + FileExtensions.FASTA_INDEX);
+        SAMSequenceDictionary indexDictionary = new SAMSequenceDictionary();
+
+        for(FastaSequenceIndexEntry entry : new FastaSequenceIndex(indexFile))
+        {
+            indexDictionary.addSequence(new SAMSequenceRecord(entry.getContig(), (int)entry.getSize()));
+        }
+
+        BT_LOGGER.warn("##########################################################################################");
+        BT_LOGGER.warn("ref genome({}) has no sequence dictionary (.dict) alongside the FASTA", refGenomeFile);
+        BT_LOGGER.warn("contigs({}) are taken from the FASTA index({}) instead, without MD5 checksums", indexDictionary.size(), indexFile);
+        BT_LOGGER.warn("any output BAM header built from it has no M5 values - provide the .dict file to avoid this");
+        BT_LOGGER.warn("##########################################################################################");
+
+        return indexDictionary;
     }
 
     public String formFilename(final String fileId, final String fileExtension)

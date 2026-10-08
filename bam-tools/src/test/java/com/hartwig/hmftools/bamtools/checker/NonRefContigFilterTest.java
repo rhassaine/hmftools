@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.util.List;
 
 import com.google.common.collect.Lists;
+import com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource;
 
 import org.junit.Test;
 
@@ -213,5 +214,34 @@ public class NonRefContigFilterTest
         SAMFileHeader mismatchHeader = new SAMFileHeader();
         mismatchHeader.setSequenceDictionary(new SAMSequenceDictionary(List.of(new SAMSequenceRecord("chr1", 9999))));
         assertFalse(NonRefContigFilter.checkContigLengths(mismatchHeader, mRefDictionary));
+    }
+
+    @Test
+    public void testRefDictionaryFallsBackToFastaIndex() throws IOException
+    {
+        File refDir = Files.createTempDirectory("ref_genome").toFile();
+        refDir.deleteOnExit();
+
+        File fastaFile = new File(refDir, "ref.fasta");
+        Files.writeString(fastaFile.toPath(), ">chr1\nACGTACGT\n>chr2\nACGT\n");
+        File indexFile = new File(refDir, "ref.fasta.fai");
+        Files.writeString(indexFile.toPath(), "chr1\t8\t6\t8\t9\nchr2\t4\t21\t4\t5\n");
+        fastaFile.deleteOnExit();
+        indexFile.deleteOnExit();
+
+        RefGenomeSource refGenome = RefGenomeSource.loadRefGenome(fastaFile.getAbsolutePath());
+        assertNull(refGenome.refGenomeFile().getSequenceDictionary());
+
+        SAMSequenceDictionary dictionary = CheckConfig.loadRefDictionary(
+                fastaFile.getAbsolutePath(), refGenome.refGenomeFile().getSequenceDictionary());
+
+        assertEquals(2, dictionary.size());
+        assertEquals("chr1", dictionary.getSequence(0).getSequenceName());
+        assertEquals(8, dictionary.getSequence(0).getSequenceLength());
+        assertEquals("chr2", dictionary.getSequence(1).getSequenceName());
+        assertEquals(4, dictionary.getSequence(1).getSequenceLength());
+
+        // a dictionary when present is used as is
+        assertEquals(mRefDictionary, CheckConfig.loadRefDictionary(fastaFile.getAbsolutePath(), mRefDictionary));
     }
 }
