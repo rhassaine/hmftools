@@ -4,6 +4,7 @@ import static com.hartwig.hmftools.bamtools.checker.Fragment.convertHardClips;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.ALIGNMENT_SCORE_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.BQSR_ORIGINAL_QUALS;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.MATE_CIGAR_ATTRIBUTE;
+import static com.hartwig.hmftools.common.bam.SamRecordUtils.MISMATCHES_AND_DELETIONS_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.NO_CIGAR;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.NUM_MUTATONS_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.READ_GROUP_ATTRIBUTE;
@@ -225,8 +226,9 @@ public class BamCheckerTest
 
         assertTrue(read2.getMateUnmappedFlag());
 
-        // test again with the supp arriving first
+        // test again with the supp arriving first, restoring the alignment score cleared when the read was unmapped
         read1.setReadUnmappedFlag(false);
+        read1.setAttribute(ALIGNMENT_SCORE_ATTRIBUTE, lowAlignmentScore);
 
         fragment = new Fragment(supp1);
         fragment.addRead(read2);
@@ -713,5 +715,38 @@ public class BamCheckerTest
 
         assertEquals(originalQuals, read.getBaseQualityString());
         assertFalse(read.hasAttribute(BQSR_ORIGINAL_QUALS));
+    }
+
+    @Test
+    public void testUnmappedReadAlignmentAttributesCleared()
+    {
+        SAMRecord read1 = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_1, 100, TEST_READ_BASES, TEST_CIGAR, CHR_2, 300,
+                false, false, null);
+        read1.setAttribute(NUM_MUTATONS_ATTRIBUTE, 1);
+
+        SAMRecord read2 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_2, 300, TEST_READ_BASES, TEST_CIGAR, CHR_1, 100,
+                true, false, null);
+        SamRecordTestUtils.flipFirstInPair(read2);
+        read2.setAttribute(NUM_MUTATONS_ATTRIBUTE, 2);
+        read2.setAttribute(MISMATCHES_AND_DELETIONS_ATTRIBUTE, "5A14");
+        read2.setAttribute(ALIGNMENT_SCORE_ATTRIBUTE, 15);
+        read2.setAttribute(XS_ATTRIBUTE, 12);
+        read2.setAttribute("XA", "1,+500,20M,1;");
+
+        Fragment fragment = new Fragment(read1);
+        fragment.addRead(read2);
+        fragment.extractCompleteReads();
+
+        assertTrue(read2.getReadUnmappedFlag());
+        assertNull(read2.getAttribute(NUM_MUTATONS_ATTRIBUTE));
+        assertNull(read2.getAttribute(MISMATCHES_AND_DELETIONS_ATTRIBUTE));
+        assertNull(read2.getAttribute(ALIGNMENT_SCORE_ATTRIBUTE));
+        assertNull(read2.getAttribute(XS_ATTRIBUTE));
+        assertEquals("1,+500,20M,1;", read2.getStringAttribute("XA")); // left as is
+
+        // the mapped read keeps its alignment attributes
+        assertEquals(1, read1.getIntegerAttribute(NUM_MUTATONS_ATTRIBUTE).intValue());
     }
 }

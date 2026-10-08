@@ -5,11 +5,14 @@ import static java.lang.String.format;
 import static com.hartwig.hmftools.bamtools.common.CommonUtils.BT_LOGGER;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.ALIGNMENT_SCORE_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.MATE_CIGAR_ATTRIBUTE;
+import static com.hartwig.hmftools.common.bam.SamRecordUtils.MISMATCHES_AND_DELETIONS_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.NO_CHROMOSOME_INDEX;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.NO_CHROMOSOME_NAME;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.NO_CIGAR;
+import static com.hartwig.hmftools.common.bam.SamRecordUtils.NUM_MUTATONS_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.READ_GROUP_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.SUPPLEMENTARY_ATTRIBUTE;
+import static com.hartwig.hmftools.common.bam.SamRecordUtils.XS_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.readToString;
 import static com.hartwig.hmftools.common.bam.SupplementaryReadData.ALIGNMENTS_DELIM;
 
@@ -410,6 +413,8 @@ public class Fragment
                 read.setMateReferenceIndex(NO_CHROMOSOME_INDEX);
                 read.setMateReferenceName(NO_CHROMOSOME_NAME);
                 read.setAttribute(MATE_CIGAR_ATTRIBUTE, null);
+
+                clearAlignmentAttributes(read);
             }
 
             return;
@@ -438,6 +443,7 @@ public class Fragment
             unmappedRead.setReadUnmappedFlag(true);
             unmappedRead.setMappingQuality(0);
             unmappedRead.setCigarString(NO_CIGAR);
+            clearAlignmentAttributes(unmappedRead);
 
             if(mappedRead != null)
             {
@@ -451,6 +457,15 @@ public class Fragment
                 unmappedRead.setAlignmentStart(unmappedRead.getMateAlignmentStart());
             }
         }
+    }
+
+    private static void clearAlignmentAttributes(final SAMRecord read)
+    {
+        // these describe the alignment the read no longer has
+        read.setAttribute(NUM_MUTATONS_ATTRIBUTE, null);
+        read.setAttribute(MISMATCHES_AND_DELETIONS_ATTRIBUTE, null);
+        read.setAttribute(ALIGNMENT_SCORE_ATTRIBUTE, null);
+        read.setAttribute(XS_ATTRIBUTE, null);
     }
 
     private void setMappedSupplementaryMateUnmapped(@Nullable final SAMRecord mappedRead)
