@@ -178,7 +178,6 @@ public class Fragment
 
     private static void removeInvalidContigSuppData(final SAMRecord read)
     {
-        // a supplementary's SA tag may still list other supplementaries on contigs absent from the ref genome
         List<SupplementaryReadData> suppDataList = SupplementaryReadData.extractAlignments(read);
 
         if(suppDataList == null)

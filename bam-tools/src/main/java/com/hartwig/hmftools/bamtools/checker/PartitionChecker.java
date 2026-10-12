@@ -285,8 +285,6 @@ public class PartitionChecker
 
     protected static boolean hasRefGenomeContigs(final SAMRecord read)
     {
-        // reads not checked as a fragment, eg secondaries or reads whose mate was never found, can still refer to a contig absent from the
-        // ref genome, and cannot be written with its sequence dictionary
         return isRefGenomeContig(read.getReferenceName()) && (!read.getReadPairedFlag() || isRefGenomeContig(read.getMateReferenceName()));
     }
 
