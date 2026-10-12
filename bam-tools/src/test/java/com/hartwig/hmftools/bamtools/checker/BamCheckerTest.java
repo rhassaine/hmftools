@@ -627,6 +627,37 @@ public class BamCheckerTest
     }
 
     @Test
+    public void testSupplementaryDataOnInvalidContigsRemoved()
+    {
+        // R1 has supplementaries on chr1 and an invalid contig, so neither R1's nor its valid supplementary's SA tag keeps the invalid one
+        String validSuppData = CHR_1 + ",500,+,20M,60,0";
+        String invalidSuppData = CHR_3 + ",200,+,20M,60,0";
+
+        SAMRecord read1 = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_1, 100, TEST_READ_BASES, TEST_CIGAR, CHR_1, 300, false, false, null);
+        read1.setAttribute(SUPPLEMENTARY_ATTRIBUTE, validSuppData + ";" + invalidSuppData);
+
+        SAMRecord supp1 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_1, 500, TEST_READ_BASES, TEST_CIGAR, CHR_1, 300, false, true, null);
+        supp1.setAttribute(SUPPLEMENTARY_ATTRIBUTE, CHR_1 + ",100,+,20M,60,0;" + invalidSuppData);
+
+        SAMRecord read2 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_1, 300, TEST_READ_BASES, TEST_CIGAR, CHR_1, 100, true, false, null);
+        SamRecordTestUtils.flipFirstInPair(read2);
+
+        Fragment fragment = new Fragment(read1);
+        fragment.addRead(supp1);
+        fragment.addRead(read2);
+
+        List<SAMRecord> reads = fragment.extractCompleteReads();
+        assertEquals(3, reads.size());
+        assertTrue(fragment.isComplete());
+
+        assertEquals(validSuppData, read1.getStringAttribute(SUPPLEMENTARY_ATTRIBUTE));
+        assertEquals(CHR_1 + ",100,+,20M,60,0", supp1.getStringAttribute(SUPPLEMENTARY_ATTRIBUTE));
+    }
+
+    @Test
     public void testLateSupplementaryWithUnmappedMate()
     {
         // the primaries are written first, then R1's supplementary arrives from another partition via the fragment cache

@@ -23,6 +23,7 @@ import static htsjdk.samtools.CigarOperator.S;
 import java.util.Collections;
 import java.util.List;
 import java.util.StringJoiner;
+import java.util.stream.Collectors;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
@@ -122,6 +123,8 @@ public class Fragment
             if(isInvalidRead(read))
                 return;
 
+            removeInvalidContigSuppData(read);
+
             ++mReceivedSupplementaryCount;
         }
         else
@@ -173,6 +176,21 @@ public class Fragment
 
         Integer asScore = read.getIntegerAttribute(ALIGNMENT_SCORE_ATTRIBUTE);
         return asScore != null && asScore.intValue() < CheckConfig.Params.MinAlignmentScore;
+    }
+
+    private static void removeInvalidContigSuppData(final SAMRecord read)
+    {
+        // a supplementary's SA tag may still list other supplementaries on contigs absent from the ref genome
+        List<SupplementaryReadData> suppDataList = SupplementaryReadData.extractAlignments(read);
+
+        if(suppDataList == null)
+            return;
+
+        List<SupplementaryReadData> validSuppDataList = suppDataList.stream()
+                .filter(x -> CheckConfig.Params.ValidContigs.contains(x.Chromosome)).collect(Collectors.toList());
+
+        if(validSuppDataList.size() < suppDataList.size())
+            read.setAttribute(SUPPLEMENTARY_ATTRIBUTE, SupplementaryReadData.alignmentsToSamTag(validSuppDataList));
     }
 
     private void checkSupplementaryData(final SAMRecord read)
