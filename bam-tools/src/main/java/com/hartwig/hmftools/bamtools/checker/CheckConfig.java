@@ -67,7 +67,7 @@ public class CheckConfig
     public final boolean SkipUnmapped;
     public final boolean ReverseBqsr;
     public final boolean DropIncompleteFragments;
-    public final boolean WriteRefDictionary;
+    public final boolean ConvertRefGenome;
     public final SAMSequenceDictionary RefDictionary;
     public final int SortThreadMemory;
     public final ValidationStringency BamStringency;
@@ -85,7 +85,7 @@ public class CheckConfig
     public static final String SKIP_UNMAPPED = "skip_unmapped";
     public static final String REVERSE_BQSR = "bqsr_reverse";
     public static final String CONVERT_HARD_CLIPS = "convert_hard_clips";
-    public static final String WRITE_REF_DICTIONARY = "write_ref_dict";
+    public static final String CONVERT_REF_GENOME = "convert_ref_genome";
     public static final String MIN_ALIGNMENT_SCORE = "min_align_score";
     public static final String SORT_THREAD_MEMORY = "sort_thread_mem";
 
@@ -148,7 +148,7 @@ public class CheckConfig
         LogReadIds = parseLogReadIds(configBuilder);
 
         ReverseBqsr = configBuilder.hasFlag(REVERSE_BQSR);
-        WriteRefDictionary = configBuilder.hasFlag(WRITE_REF_DICTIONARY);
+        ConvertRefGenome = configBuilder.hasFlag(CONVERT_REF_GENOME);
 
         PerfDebug = configBuilder.hasFlag(PERF_DEBUG);
         SkipUnmapped = configBuilder.hasFlag(SKIP_UNMAPPED);
@@ -223,8 +223,8 @@ public class CheckConfig
         configBuilder.addFlag(CONVERT_HARD_CLIPS, "Convert hard to soft-clips");
 
         configBuilder.addFlag(
-                WRITE_REF_DICTIONARY,
-                "Write the output BAM with the ref genome sequence dictionary, unmapping or dropping reads on contigs absent from it");
+                CONVERT_REF_GENOME,
+                "Convert the output BAM to the ref genome if the BAM was aligned to a different one: use its sequence dictionary and recalculate NM and MD");
 
         configBuilder.addInteger(CFG_LOG_READ_COUNT, "Log partition processed read count frequency", LOG_READ_COUNT);
         configBuilder.addInteger(SORT_THREAD_MEMORY, "Memory per sort thread (value in GB)", DEFAULT_SORT_THREAD_MEMORY);

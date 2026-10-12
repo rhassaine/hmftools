@@ -202,13 +202,8 @@ specific_regions | As above
 ## BamChecker
 Checks a BAM for fragment consistency and sets Mate CIGAR if missing from paired reads.
 
-It can also make a BAM aligned to a different build of the reference compatible with the HMF tools, such as a GDC BAM aligned to
-GRCh38.d1.vd1 (which has viral contigs) used with the HMF GRCh38 ref genome:
-- primary reads on contigs absent from the ref genome are unmapped, keeping their bases and qualities, and placed at their mate if it
-  is mapped; supplementary alignments on such contigs are dropped
-- with `write_ref_dict`, the output BAM uses the ref genome's sequence dictionary instead of the input BAM's, records are remapped to it
-  by contig name, nothing refers to a contig absent from the ref genome, and NM (and MD if present) are recalculated against the
-  ref genome. The XA tag is left as is
+With `convert_ref_genome`, a BAM aligned to a different reference genome, such as a GDC BAM aligned to GRCh38.d1.vd1, is converted
+to the ref genome: the output BAM header takes its contigs from the ref genome and NM (and MD if present) are recalculated against it.
 
 ### Usage
 
@@ -226,7 +221,7 @@ java -cp bam-tools.jar com.hartwig.hmftools.bamtools.checker.BamChecker \
 Filter | Description
 ---|---
 bam_file | Input BAM file
-ref_genome | Reference genome the output BAM is checked against and made compatible with, which needn't be the one used to align the BAM. Its sequence dictionary (.dict) should be alongside the FASTA, otherwise contigs are taken from the .fai index without MD5 checksums, with a warning
+ref_genome | Reference genome file used to create the output BAM. If it doesn't match the reference genome file used for the input BAM, enabling `convert_ref_genome` and including a .dict file is advised
 output_dir | Path for output file, if omitted will write to same directory as BAM file
 log_level | As above
 threads | As above
@@ -244,7 +239,7 @@ skip_unmapped | Skip checking and writing fully unmapped reads
 bqsr_reverse | Revert to original from BQSR quals if present
 convert_hard_clips | Convert hard-clipped to soft-clipped supplementaries
 min_align_score | Unmap primaries and drop supplementaries with low alignment score (default 30)
-write_ref_dict | Write the output BAM with the ref genome's sequence dictionary, unmapping or dropping reads on contigs absent from it and recalculating NM and MD
+convert_ref_genome | Convert the output BAM to the ref genome: take the BAM header's contigs from it and recalculate NM and MD
 sort_thread_mem | Limit per-thread memory, integer value in GB
 
 ## AltContigRemapper
