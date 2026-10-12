@@ -30,8 +30,10 @@ import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.filenamePar
 import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.parseOutputDir;
 import static com.hartwig.hmftools.common.utils.file.FileWriterUtils.pathFromFile;
 
+import java.io.File;
 import java.util.List;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.hartwig.hmftools.common.bam.BamUtils;
 import com.hartwig.hmftools.common.bamops.BamToolName;
 import com.hartwig.hmftools.common.genome.refgenome.RefGenomeSource;
@@ -39,8 +41,12 @@ import com.hartwig.hmftools.common.genome.refgenome.RefGenomeVersion;
 import com.hartwig.hmftools.common.region.SpecificRegions;
 import com.hartwig.hmftools.common.utils.config.ConfigBuilder;
 
+import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SAMSequenceRecord;
 import htsjdk.samtools.ValidationStringency;
+import htsjdk.samtools.reference.FastaSequenceIndex;
+import htsjdk.samtools.reference.FastaSequenceIndexEntry;
+import htsjdk.samtools.util.FileExtensions;
 
 public class CheckConfig
 {
@@ -59,6 +65,8 @@ public class CheckConfig
     public final boolean SkipUnmapped;
     public final boolean ReverseBqsr;
     public final boolean DropIncompleteFragments;
+    public final boolean ConvertRefGenome;
+    public final SAMSequenceDictionary RefDictionary;
     public final int SortThreadMemory;
     public final ValidationStringency BamStringency;
 
@@ -75,6 +83,7 @@ public class CheckConfig
     public static final String SKIP_UNMAPPED = "skip_unmapped";
     public static final String REVERSE_BQSR = "bqsr_reverse";
     public static final String CONVERT_HARD_CLIPS = "convert_hard_clips";
+    public static final String CONVERT_REF_GENOME = "convert_ref_genome";
     public static final String MIN_ALIGNMENT_SCORE = "min_align_score";
     public static final String SORT_THREAD_MEMORY = "sort_thread_mem";
 
@@ -115,7 +124,15 @@ public class CheckConfig
 
         RefGenomeSource refGenome = RefGenomeSource.loadRefGenome(RefGenomeFile);
 
-        for(SAMSequenceRecord sequenceRecord : refGenome.refGenomeFile().getSequenceDictionary().getSequences())
+        if(refGenome == null)
+        {
+            BT_LOGGER.error("failed to load ref genome({}), check the FASTA and its .fai index", RefGenomeFile);
+            System.exit(1);
+        }
+
+        RefDictionary = loadRefDictionary(RefGenomeFile, refGenome.refGenomeFile().getSequenceDictionary());
+
+        for(SAMSequenceRecord sequenceRecord : RefDictionary.getSequences())
         {
             Params.ValidContigs.add(sequenceRecord.getSequenceName());
         }
@@ -129,6 +146,7 @@ public class CheckConfig
         LogReadIds = parseLogReadIds(configBuilder);
 
         ReverseBqsr = configBuilder.hasFlag(REVERSE_BQSR);
+        ConvertRefGenome = configBuilder.hasFlag(CONVERT_REF_GENOME);
 
         PerfDebug = configBuilder.hasFlag(PERF_DEBUG);
         SkipUnmapped = configBuilder.hasFlag(SKIP_UNMAPPED);
@@ -141,6 +159,30 @@ public class CheckConfig
 
         LOG_READ_COUNT = configBuilder.getInteger(CFG_LOG_READ_COUNT);
         SortThreadMemory = configBuilder.getInteger(SORT_THREAD_MEMORY);
+    }
+
+    @VisibleForTesting
+    public static SAMSequenceDictionary loadRefDictionary(final String refGenomeFile, final SAMSequenceDictionary refDictionary)
+    {
+        if(refDictionary != null && !refDictionary.isEmpty())
+            return refDictionary;
+
+        // fall back to the FASTA index, which has contig names and lengths but no MD5 checksums
+        File indexFile = new File(refGenomeFile + FileExtensions.FASTA_INDEX);
+        SAMSequenceDictionary indexDictionary = new SAMSequenceDictionary();
+
+        for(FastaSequenceIndexEntry entry : new FastaSequenceIndex(indexFile))
+        {
+            indexDictionary.addSequence(new SAMSequenceRecord(entry.getContig(), (int)entry.getSize()));
+        }
+
+        BT_LOGGER.warn("##########################################################################################");
+        BT_LOGGER.warn("ref genome({}) has no sequence dictionary (.dict) alongside the FASTA", refGenomeFile);
+        BT_LOGGER.warn("contigs({}) are taken from the FASTA index({}) instead, without MD5 checksums", indexDictionary.size(), indexFile);
+        BT_LOGGER.warn("any output BAM header built from it has no M5 values - provide the .dict file to avoid this");
+        BT_LOGGER.warn("##########################################################################################");
+
+        return indexDictionary;
     }
 
     public String formFilename(final String fileId, final String fileExtension)
@@ -177,6 +219,10 @@ public class CheckConfig
 
         configBuilder.addFlag(REVERSE_BQSR, "Reverse BQSR");
         configBuilder.addFlag(CONVERT_HARD_CLIPS, "Convert hard to soft-clips");
+
+        configBuilder.addFlag(
+                CONVERT_REF_GENOME,
+                "Convert the output BAM to the ref genome if the BAM was aligned to a different one: use its sequence dictionary and recalculate NM and MD");
 
         configBuilder.addInteger(CFG_LOG_READ_COUNT, "Log partition processed read count frequency", LOG_READ_COUNT);
         configBuilder.addInteger(SORT_THREAD_MEMORY, "Memory per sort thread (value in GB)", DEFAULT_SORT_THREAD_MEMORY);

@@ -200,7 +200,10 @@ specific_regions | As above
 
 
 ## BamChecker
-Checks a BAM for fragment consistency and sets Mate CIGAR if missing from paired reads
+Checks a BAM for fragment consistency and sets Mate CIGAR if missing from paired reads.
+
+With `convert_ref_genome`, a BAM aligned to a different reference genome, such as a GDC BAM aligned to GRCh38.d1.vd1, is converted
+to the ref genome: the output BAM header takes its contigs from the ref genome and NM (and MD if present) are recalculated against it.
 
 ### Usage
 
@@ -218,7 +221,7 @@ java -cp bam-tools.jar com.hartwig.hmftools.bamtools.checker.BamChecker \
 Filter | Description
 ---|---
 bam_file | Input BAM file
-ref_genome | Reference genome file used to create the BAM
+ref_genome | Reference genome file used to create the output BAM. If it doesn't match the reference genome file used for the input BAM, enabling `convert_ref_genome` and including a .dict file is advised
 output_dir | Path for output file, if omitted will write to same directory as BAM file
 log_level | As above
 threads | As above
@@ -235,7 +238,8 @@ drop_incompletes | Drop unmatched pair reads from output BAM
 skip_unmapped | Skip checking and writing fully unmapped reads
 bqsr_reverse | Revert to original from BQSR quals if present
 convert_hard_clips | Convert hard-clipped to soft-clipped supplementaries
-min_align_score | Unmap primaries and drop supplementarties with low alignment score (default 30)
+min_align_score | Unmap primaries and drop supplementaries with low alignment score (default 30)
+convert_ref_genome | Convert the output BAM to the ref genome: take the BAM header's contigs from it and recalculate NM and MD
 sort_thread_mem | Limit per-thread memory, integer value in GB
 
 ## AltContigRemapper

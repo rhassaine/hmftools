@@ -7,6 +7,7 @@ import static com.hartwig.hmftools.bamtools.common.CommonUtils.BT_LOGGER;
 import static com.hartwig.hmftools.common.bam.BamSlicer.createIntervals;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.ALIGNMENT_SCORE_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.BQSR_ORIGINAL_QUALS;
+import static com.hartwig.hmftools.common.bam.SamRecordUtils.NO_CHROMOSOME_NAME;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.readToString;
 import static com.hartwig.hmftools.common.genome.chromosome.Chromosome.isAltRegionContig;
 
@@ -34,6 +35,7 @@ public class PartitionChecker
     private final SamReader mSamReader;
     private final SAMFileWriter mBamWriter;
     private final FragmentCache mFragmentCache;
+    private final AlignmentTagCalculator mAlignmentTagCalculator;
 
     private final BamSlicer mBamSlicer;
     private ChrBaseRegion mRegion;
@@ -45,15 +47,18 @@ public class PartitionChecker
     private long mReadCount;
     private long mNextLogReadCount;
     private long mCompleteFragments;
+    private long mNonRefContigDropped;
     private final boolean mLogReadIds;
 
     public PartitionChecker(
-            final CheckConfig config, final FragmentCache fragmentCache, final SamReader samReader, final SAMFileWriter bamWriter)
+            final CheckConfig config, final FragmentCache fragmentCache, final SamReader samReader, final SAMFileWriter bamWriter,
+            final AlignmentTagCalculator alignmentTagCalculator)
     {
         mConfig = config;
         mSamReader = samReader;
         mBamWriter = bamWriter;
         mFragmentCache = fragmentCache;
+        mAlignmentTagCalculator = alignmentTagCalculator;
 
         mRegion = null;
 
@@ -65,6 +70,7 @@ public class PartitionChecker
 
         mReadCount = 0;
         mCompleteFragments = 0;
+        mNonRefContigDropped = 0;
         mNextLogReadCount = LOG_READ_COUNT;
         mLogReadIds = !mConfig.LogReadIds.isEmpty();
 
@@ -73,6 +79,7 @@ public class PartitionChecker
     }
 
     public FragmentStats stats() { return mStats; }
+    public long nonRefContigDropped() { return mNonRefContigDropped; }
 
     public void processPartition(final ChrBaseRegion region)
     {
@@ -179,7 +186,7 @@ public class PartitionChecker
 
     private static final String MARK_DUPS_TAG = "MarkDuplicates";
 
-    private void reverseBqsrQuals(final SAMRecord read)
+    protected static void reverseBqsrQuals(final SAMRecord read)
     {
         String originalQualsStr = read.getStringAttribute(BQSR_ORIGINAL_QUALS);
 
@@ -261,7 +268,28 @@ public class PartitionChecker
 
     private void writeRecord(final SAMRecord read)
     {
-        if(mBamWriter != null)
-            mBamWriter.addAlignment(read);
+        if(mBamWriter == null)
+            return;
+
+        if(mConfig.ConvertRefGenome && !hasRefGenomeContigs(read))
+        {
+            ++mNonRefContigDropped;
+            return;
+        }
+
+        if(mAlignmentTagCalculator != null)
+            mAlignmentTagCalculator.recalculate(read);
+
+        mBamWriter.addAlignment(read);
+    }
+
+    protected static boolean hasRefGenomeContigs(final SAMRecord read)
+    {
+        return isRefGenomeContig(read.getReferenceName()) && (!read.getReadPairedFlag() || isRefGenomeContig(read.getMateReferenceName()));
+    }
+
+    private static boolean isRefGenomeContig(final String contig)
+    {
+        return NO_CHROMOSOME_NAME.equals(contig) || CheckConfig.Params.ValidContigs.contains(contig);
     }
 }

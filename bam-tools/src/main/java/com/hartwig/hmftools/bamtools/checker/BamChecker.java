@@ -29,6 +29,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Collectors;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.hartwig.hmftools.common.bam.SupplementaryReadData;
 import com.hartwig.hmftools.common.bamops.BamOperations;
@@ -40,6 +41,8 @@ import com.hartwig.hmftools.common.utils.config.ConfigBuilder;
 
 import htsjdk.samtools.SAMFileHeader;
 import htsjdk.samtools.SAMRecord;
+import htsjdk.samtools.SAMSequenceDictionary;
+import htsjdk.samtools.SAMSequenceRecord;
 import htsjdk.samtools.SamReaderFactory;
 
 public class BamChecker
@@ -62,6 +65,9 @@ public class BamChecker
                 .open(new File(mConfig.BamFile)).getFileHeader();
 
         FragmentCache fragmentCache = new FragmentCache(fileHeader);
+
+        if(mConfig.ConvertRefGenome && !checkContigLengths(fileHeader, mConfig.RefDictionary))
+            System.exit(1);
 
         List<PartitionThread> partitionThreads = createPartitionThreads(fragmentCache);
         List<Thread> allThreads = Lists.newArrayList(partitionThreads);
@@ -105,6 +111,21 @@ public class BamChecker
 
         partitionThreads.forEach(x -> x.close());
 
+        if(mConfig.ConvertRefGenome)
+        {
+            long nonRefContigDropped = partitionThreads.stream().mapToLong(x -> x.nonRefContigDropped()).sum();
+
+            if(nonRefContigDropped > 0)
+                BT_LOGGER.warn("dropped {} reads still referring to contigs absent from the ref genome", nonRefContigDropped);
+
+            long recalculated = partitionThreads.stream()
+                    .filter(x -> x.alignmentTagCalculator() != null).mapToLong(x -> x.alignmentTagCalculator().recalculatedCount()).sum();
+            long nmChanged = partitionThreads.stream()
+                    .filter(x -> x.alignmentTagCalculator() != null).mapToLong(x -> x.alignmentTagCalculator().nmChangedCount()).sum();
+
+            BT_LOGGER.info("alignment tags recalculated against ref genome: reads({}) NM changed({})", recalculated, nmChanged);
+        }
+
         if(mConfig.writeBam())
         {
             finaliseBam(partitionThreads);
@@ -136,6 +157,34 @@ public class BamChecker
         }
 
         return partitionThreads;
+    }
+
+    @VisibleForTesting
+    public static boolean checkContigLengths(final SAMFileHeader inputHeader, final SAMSequenceDictionary refDictionary)
+    {
+        int bamOnlyCount = 0;
+        boolean valid = true;
+
+        for(SAMSequenceRecord bamSequence : inputHeader.getSequenceDictionary().getSequences())
+        {
+            SAMSequenceRecord refSequence = refDictionary.getSequence(bamSequence.getSequenceName());
+
+            if(refSequence == null)
+            {
+                ++bamOnlyCount;
+            }
+            else if(refSequence.getSequenceLength() != bamSequence.getSequenceLength())
+            {
+                BT_LOGGER.error("contig({}) length differs: BAM({}) ref genome({})",
+                        bamSequence.getSequenceName(), bamSequence.getSequenceLength(), refSequence.getSequenceLength());
+                valid = false;
+            }
+        }
+
+        BT_LOGGER.info("converting to ref genome: BAM contigs({}) ref genome contigs({}) BAM contigs not in ref genome({})",
+                inputHeader.getSequenceDictionary().size(), refDictionary.size(), bamOnlyCount);
+
+        return valid;
     }
 
     private void writeIncompleteReads(final List<PartitionThread> partitionThreads, final List<SAMRecord> incompleteReads)

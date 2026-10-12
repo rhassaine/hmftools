@@ -2,7 +2,9 @@ package com.hartwig.hmftools.bamtools.checker;
 
 import static com.hartwig.hmftools.bamtools.checker.Fragment.convertHardClips;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.ALIGNMENT_SCORE_ATTRIBUTE;
+import static com.hartwig.hmftools.common.bam.SamRecordUtils.BQSR_ORIGINAL_QUALS;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.MATE_CIGAR_ATTRIBUTE;
+import static com.hartwig.hmftools.common.bam.SamRecordUtils.MISMATCHES_AND_DELETIONS_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.NO_CIGAR;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.NUM_MUTATONS_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.READ_GROUP_ATTRIBUTE;
@@ -224,8 +226,9 @@ public class BamCheckerTest
 
         assertTrue(read2.getMateUnmappedFlag());
 
-        // test again with the supp arriving first
+        // test again with the supp arriving first, restoring the alignment score cleared when the read was unmapped
         read1.setReadUnmappedFlag(false);
+        read1.setAttribute(ALIGNMENT_SCORE_ATTRIBUTE, lowAlignmentScore);
 
         fragment = new Fragment(supp1);
         fragment.addRead(read2);
@@ -585,5 +588,196 @@ public class BamCheckerTest
         assertTrue(read.getCigar().getCigarElements().get(2).getOperator() == S);
 
         assertEquals(primaryReadBases.getBytes().length, read.getReadBases().length);
+    }
+
+    @Test
+    public void testMappedSupplementaryWithUnmappedMate()
+    {
+        // R2 is on an invalid contig so is unmapped, and R1's supplementary must then point at an unmapped mate placed at R1
+        SAMRecord read1 = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_1, 100, TEST_READ_BASES, TEST_CIGAR, CHR_2, 300,
+                false, false, new SupplementaryReadData(CHR_1, 500, SUPP_POS_STRAND, TEST_CIGAR, 60));
+
+        SAMRecord supp1 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_1, 500, TEST_READ_BASES, TEST_CIGAR, CHR_2, 300,
+                false, true, new SupplementaryReadData(CHR_1, 100, SUPP_POS_STRAND, TEST_CIGAR, 60));
+        supp1.setAttribute(MATE_CIGAR_ATTRIBUTE, TEST_CIGAR);
+
+        SAMRecord read2 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_2, 300, TEST_READ_BASES, TEST_CIGAR, CHR_1, 100,
+                true, false, null);
+        SamRecordTestUtils.flipFirstInPair(read2);
+
+        Fragment fragment = new Fragment(read1);
+        fragment.addRead(supp1);
+        fragment.addRead(read2);
+
+        List<SAMRecord> reads = fragment.extractCompleteReads();
+        assertEquals(3, reads.size());
+        assertTrue(fragment.isComplete());
+
+        assertTrue(read2.getReadUnmappedFlag());
+        assertEquals(CHR_1, read2.getReferenceName());
+        assertEquals(100, read2.getAlignmentStart());
+
+        assertTrue(supp1.getMateUnmappedFlag());
+        assertFalse(supp1.getProperPairFlag());
+        assertEquals(CHR_1, supp1.getMateReferenceName());
+        assertEquals(100, supp1.getMateAlignmentStart());
+    }
+
+    @Test
+    public void testSupplementaryDataOnInvalidContigsRemoved()
+    {
+        // R1 has supplementaries on chr1 and an invalid contig, so neither R1's nor its valid supplementary's SA tag keeps the invalid one
+        String validSuppData = CHR_1 + ",500,+,20M,60,0";
+        String invalidSuppData = CHR_3 + ",200,+,20M,60,0";
+
+        SAMRecord read1 = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_1, 100, TEST_READ_BASES, TEST_CIGAR, CHR_1, 300, false, false, null);
+        read1.setAttribute(SUPPLEMENTARY_ATTRIBUTE, validSuppData + ";" + invalidSuppData);
+
+        SAMRecord supp1 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_1, 500, TEST_READ_BASES, TEST_CIGAR, CHR_1, 300, false, true, null);
+        supp1.setAttribute(SUPPLEMENTARY_ATTRIBUTE, CHR_1 + ",100,+,20M,60,0;" + invalidSuppData);
+
+        SAMRecord read2 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_1, 300, TEST_READ_BASES, TEST_CIGAR, CHR_1, 100, true, false, null);
+        SamRecordTestUtils.flipFirstInPair(read2);
+
+        Fragment fragment = new Fragment(read1);
+        fragment.addRead(supp1);
+        fragment.addRead(read2);
+
+        List<SAMRecord> reads = fragment.extractCompleteReads();
+        assertEquals(3, reads.size());
+        assertTrue(fragment.isComplete());
+
+        assertEquals(validSuppData, read1.getStringAttribute(SUPPLEMENTARY_ATTRIBUTE));
+        assertEquals(CHR_1 + ",100,+,20M,60,0", supp1.getStringAttribute(SUPPLEMENTARY_ATTRIBUTE));
+    }
+
+    @Test
+    public void testLateSupplementaryWithUnmappedMate()
+    {
+        // the primaries are written first, then R1's supplementary arrives from another partition via the fragment cache
+        SAMRecord read1 = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_1, 100, TEST_READ_BASES, TEST_CIGAR, CHR_2, 300,
+                false, false, new SupplementaryReadData(CHR_1, 5000, SUPP_POS_STRAND, TEST_CIGAR, 60));
+
+        SAMRecord read2 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_2, 300, TEST_READ_BASES, TEST_CIGAR, CHR_1, 100,
+                true, false, null);
+        SamRecordTestUtils.flipFirstInPair(read2);
+
+        SAMRecord supp1 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_1, 5000, TEST_READ_BASES, TEST_CIGAR, CHR_2, 300,
+                false, true, new SupplementaryReadData(CHR_1, 100, SUPP_POS_STRAND, TEST_CIGAR, 60));
+
+        FragmentCache fragmentCache = new FragmentCache(null);
+
+        Fragment fragment = new Fragment(read1);
+        fragment.addRead(read2);
+        assertEquals(2, fragment.extractCompleteReads().size());
+        assertFalse(fragment.isComplete());
+
+        assertTrue(fragmentCache.handleIncompleteFragments(List.of(fragment)).isEmpty());
+
+        List<SAMRecord> completeReads = fragmentCache.handleIncompleteFragments(List.of(new Fragment(supp1)));
+        assertEquals(1, completeReads.size());
+        assertEquals(0, fragmentCache.fragmentCount());
+
+        assertTrue(supp1.getMateUnmappedFlag());
+        assertEquals(CHR_1, supp1.getMateReferenceName());
+        assertEquals(100, supp1.getMateAlignmentStart());
+    }
+
+    @Test
+    public void testNoMateCigarForUnmappedMate()
+    {
+        SAMRecord read1 = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_1, 100, TEST_READ_BASES, TEST_CIGAR, CHR_2, 300,
+                false, false, null);
+
+        SAMRecord read2 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_2, 300, TEST_READ_BASES, "5S15M", CHR_1, 100,
+                true, false, null);
+        SamRecordTestUtils.flipFirstInPair(read2);
+
+        Fragment fragment = new Fragment(read1);
+        fragment.addRead(read2);
+        assertEquals(2, fragment.extractCompleteReads().size());
+
+        // the mapped read's mate is unmapped so it has no MC, while the unmapped read's mate is mapped
+        assertTrue(read1.getMateUnmappedFlag());
+        assertNull(read1.getStringAttribute(MATE_CIGAR_ATTRIBUTE));
+        assertEquals(TEST_CIGAR, read2.getStringAttribute(MATE_CIGAR_ATTRIBUTE));
+
+        // both on invalid contigs, so both fully unmapped with no MC
+        read1 = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_2, 100, TEST_READ_BASES, TEST_CIGAR, CHR_3, 300,
+                false, false, null);
+
+        read2 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_3, 300, TEST_READ_BASES, TEST_CIGAR, CHR_2, 100,
+                true, false, null);
+        SamRecordTestUtils.flipFirstInPair(read2);
+
+        fragment = new Fragment(read1);
+        fragment.addRead(read2);
+        assertEquals(2, fragment.extractCompleteReads().size());
+
+        assertTrue(read1.getReadUnmappedFlag() && read2.getReadUnmappedFlag());
+        assertNull(read1.getStringAttribute(MATE_CIGAR_ATTRIBUTE));
+        assertNull(read2.getStringAttribute(MATE_CIGAR_ATTRIBUTE));
+    }
+
+    @Test
+    public void testReverseBqsrQuals()
+    {
+        SAMRecord read = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_1, 100, TEST_READ_BASES, TEST_CIGAR, CHR_1, 300,
+                false, false, null);
+
+        String originalQuals = "5555555555AAAAAAAAAA"; // Phred+33: 20 and 32
+        read.setAttribute(BQSR_ORIGINAL_QUALS, originalQuals);
+
+        PartitionChecker.reverseBqsrQuals(read);
+
+        assertEquals(originalQuals, read.getBaseQualityString());
+        assertFalse(read.hasAttribute(BQSR_ORIGINAL_QUALS));
+    }
+
+    @Test
+    public void testUnmappedReadAlignmentAttributesCleared()
+    {
+        SAMRecord read1 = SamRecordTestUtils.createSamRecord(
+                READ_ID_GENERATOR.nextId(), CHR_1, 100, TEST_READ_BASES, TEST_CIGAR, CHR_2, 300,
+                false, false, null);
+        read1.setAttribute(NUM_MUTATONS_ATTRIBUTE, 1);
+
+        SAMRecord read2 = SamRecordTestUtils.createSamRecord(
+                read1.getReadName(), CHR_2, 300, TEST_READ_BASES, TEST_CIGAR, CHR_1, 100,
+                true, false, null);
+        SamRecordTestUtils.flipFirstInPair(read2);
+        read2.setAttribute(NUM_MUTATONS_ATTRIBUTE, 2);
+        read2.setAttribute(MISMATCHES_AND_DELETIONS_ATTRIBUTE, "5A14");
+        read2.setAttribute(ALIGNMENT_SCORE_ATTRIBUTE, 15);
+        read2.setAttribute(XS_ATTRIBUTE, 12);
+        read2.setAttribute("XA", "1,+500,20M,1;");
+
+        Fragment fragment = new Fragment(read1);
+        fragment.addRead(read2);
+        fragment.extractCompleteReads();
+
+        assertTrue(read2.getReadUnmappedFlag());
+        assertNull(read2.getAttribute(NUM_MUTATONS_ATTRIBUTE));
+        assertNull(read2.getAttribute(MISMATCHES_AND_DELETIONS_ATTRIBUTE));
+        assertNull(read2.getAttribute(ALIGNMENT_SCORE_ATTRIBUTE));
+        assertNull(read2.getAttribute(XS_ATTRIBUTE));
+        assertEquals("1,+500,20M,1;", read2.getStringAttribute("XA")); // left as is
+
+        // the mapped read keeps its alignment attributes
+        assertEquals(1, read1.getIntegerAttribute(NUM_MUTATONS_ATTRIBUTE).intValue());
     }
 }

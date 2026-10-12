@@ -5,11 +5,14 @@ import static java.lang.String.format;
 import static com.hartwig.hmftools.bamtools.common.CommonUtils.BT_LOGGER;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.ALIGNMENT_SCORE_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.MATE_CIGAR_ATTRIBUTE;
+import static com.hartwig.hmftools.common.bam.SamRecordUtils.MISMATCHES_AND_DELETIONS_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.NO_CHROMOSOME_INDEX;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.NO_CHROMOSOME_NAME;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.NO_CIGAR;
+import static com.hartwig.hmftools.common.bam.SamRecordUtils.NUM_MUTATONS_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.READ_GROUP_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.SUPPLEMENTARY_ATTRIBUTE;
+import static com.hartwig.hmftools.common.bam.SamRecordUtils.XS_ATTRIBUTE;
 import static com.hartwig.hmftools.common.bam.SamRecordUtils.readToString;
 import static com.hartwig.hmftools.common.bam.SupplementaryReadData.ALIGNMENTS_DELIM;
 
@@ -20,6 +23,7 @@ import static htsjdk.samtools.CigarOperator.S;
 import java.util.Collections;
 import java.util.List;
 import java.util.StringJoiner;
+import java.util.stream.Collectors;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
@@ -117,6 +121,8 @@ public class Fragment
             if(isInvalidRead(read))
                 return;
 
+            removeInvalidContigSuppData(read);
+
             ++mReceivedSupplementaryCount;
         }
         else
@@ -168,6 +174,20 @@ public class Fragment
 
         Integer asScore = read.getIntegerAttribute(ALIGNMENT_SCORE_ATTRIBUTE);
         return asScore != null && asScore.intValue() < CheckConfig.Params.MinAlignmentScore;
+    }
+
+    private static void removeInvalidContigSuppData(final SAMRecord read)
+    {
+        List<SupplementaryReadData> suppDataList = SupplementaryReadData.extractAlignments(read);
+
+        if(suppDataList == null)
+            return;
+
+        List<SupplementaryReadData> validSuppDataList = suppDataList.stream()
+                .filter(x -> CheckConfig.Params.ValidContigs.contains(x.Chromosome)).collect(Collectors.toList());
+
+        if(validSuppDataList.size() < suppDataList.size())
+            read.setAttribute(SUPPLEMENTARY_ATTRIBUTE, SupplementaryReadData.alignmentsToSamTag(validSuppDataList));
     }
 
     private void checkSupplementaryData(final SAMRecord read)
@@ -309,13 +329,15 @@ public class Fragment
         {
             mMateCigarFixed |= !read.hasAttribute(MATE_CIGAR_ATTRIBUTE);
 
-            if(read.getFirstOfPairFlag())
+            String mateCigar = read.getFirstOfPairFlag() ? mSecondPrimaryCigar : mFirstPrimaryCigar;
+
+            if(read.getMateUnmappedFlag() || NO_CIGAR.equals(mateCigar))
             {
-                read.setAttribute(MATE_CIGAR_ATTRIBUTE, mSecondPrimaryCigar);
+                read.setAttribute(MATE_CIGAR_ATTRIBUTE, null);
             }
             else
             {
-                read.setAttribute(MATE_CIGAR_ATTRIBUTE, mFirstPrimaryCigar);
+                read.setAttribute(MATE_CIGAR_ATTRIBUTE, mateCigar);
             }
         }
     }
@@ -409,6 +431,8 @@ public class Fragment
                 read.setMateReferenceIndex(NO_CHROMOSOME_INDEX);
                 read.setMateReferenceName(NO_CHROMOSOME_NAME);
                 read.setAttribute(MATE_CIGAR_ATTRIBUTE, null);
+
+                clearAlignmentAttributes(read);
             }
 
             return;
@@ -416,6 +440,8 @@ public class Fragment
 
         SAMRecord mappedRead = !mFirstUnmapped ? firstPrimary : secondPrimary;
         SAMRecord unmappedRead = mFirstUnmapped ? firstPrimary : secondPrimary;
+
+        setMappedSupplementaryMateUnmapped(mappedRead);
 
         if(mappedRead != null)
         {
@@ -434,9 +460,61 @@ public class Fragment
             unmappedRead.setInferredInsertSize(0);
             unmappedRead.setReadUnmappedFlag(true);
             unmappedRead.setMappingQuality(0);
-            unmappedRead.setReferenceIndex(mappedRead.getReferenceIndex());
-            unmappedRead.setAlignmentStart(mappedRead.getAlignmentStart());
             unmappedRead.setCigarString(NO_CIGAR);
+            clearAlignmentAttributes(unmappedRead);
+
+            if(mappedRead != null)
+            {
+                unmappedRead.setReferenceIndex(mappedRead.getReferenceIndex());
+                unmappedRead.setAlignmentStart(mappedRead.getAlignmentStart());
+            }
+            else
+            {
+                // defensive: place at the mapped primary as recorded in the mate fields
+                unmappedRead.setReferenceIndex(unmappedRead.getMateReferenceIndex());
+                unmappedRead.setAlignmentStart(unmappedRead.getMateAlignmentStart());
+            }
+        }
+    }
+
+    private static void clearAlignmentAttributes(final SAMRecord read)
+    {
+        // these describe the alignment the read no longer has
+        read.setAttribute(NUM_MUTATONS_ATTRIBUTE, null);
+        read.setAttribute(MISMATCHES_AND_DELETIONS_ATTRIBUTE, null);
+        read.setAttribute(ALIGNMENT_SCORE_ATTRIBUTE, null);
+        read.setAttribute(XS_ATTRIBUTE, null);
+    }
+
+    private void setMappedSupplementaryMateUnmapped(final SAMRecord mappedRead)
+    {
+        // supplementaries of the mapped read now have an unmapped mate, which is placed at the mapped read's primary
+        for(SAMRecord read : mReads)
+        {
+            if(!read.getSupplementaryAlignmentFlag() || read.getFirstOfPairFlag() == mFirstUnmapped)
+                continue;
+
+            read.setProperPairFlag(false);
+            read.setInferredInsertSize(0);
+            read.setMateUnmappedFlag(true);
+            read.setAttribute(MATE_CIGAR_ATTRIBUTE, null);
+
+            if(mappedRead != null)
+            {
+                read.setMateReferenceIndex(mappedRead.getReferenceIndex());
+                read.setMateAlignmentStart(mappedRead.getAlignmentStart());
+            }
+            else
+            {
+                // the primary was written in an earlier batch, so take its location from the first SA entry
+                SupplementaryReadData primaryData = SupplementaryReadData.extractAlignment(read);
+
+                if(primaryData != null)
+                {
+                    read.setMateReferenceName(primaryData.Chromosome);
+                    read.setMateAlignmentStart(primaryData.Position);
+                }
+            }
         }
     }
 
