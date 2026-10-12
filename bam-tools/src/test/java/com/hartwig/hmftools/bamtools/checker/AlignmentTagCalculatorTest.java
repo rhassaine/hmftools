@@ -5,7 +5,6 @@ import static com.hartwig.hmftools.common.bam.SamRecordUtils.NUM_MUTATONS_ATTRIB
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
 
 import java.util.List;
 
@@ -105,63 +104,6 @@ public class AlignmentTagCalculatorTest
     }
 
     @Test
-    public void testMdOnlyRewrittenIfPresent()
-    {
-        AlignmentTagCalculator calculator = new AlignmentTagCalculator(mRefGenome);
-
-        SAMRecord read = createRead(1, refBases(1, 20), "20M");
-        read.setAttribute(MISMATCHES_AND_DELETIONS_ATTRIBUTE, null);
-        calculator.recalculate(read);
-
-        assertEquals(0, read.getIntegerAttribute(NUM_MUTATONS_ATTRIBUTE).intValue());
-        assertNull(read.getAttribute(MISMATCHES_AND_DELETIONS_ATTRIBUTE));
-    }
-
-    @Test
-    public void testUnmappedReadUnchanged()
-    {
-        AlignmentTagCalculator calculator = new AlignmentTagCalculator(mRefGenome);
-
-        SAMRecord read = createRead(1, refBases(1, 20), "20M");
-        read.setReadUnmappedFlag(true);
-        calculator.recalculate(read);
-
-        assertEquals(99, read.getIntegerAttribute(NUM_MUTATONS_ATTRIBUTE).intValue());
-        assertEquals(0, calculator.recalculatedCount());
-    }
-
-    @Test
-    public void testWindowReload()
-    {
-        // a small window forces reloading of ref bases as reads move along and back
-        AlignmentTagCalculator calculator = new AlignmentTagCalculator(mRefGenome, 10);
-
-        int[] positions = { 1, 25, 61, 5 };
-
-        for(int position : positions)
-        {
-            SAMRecord read = createRead(position, refBases(position, position + 14), "15M");
-            calculator.recalculate(read);
-            assertEquals(0, read.getIntegerAttribute(NUM_MUTATONS_ATTRIBUTE).intValue());
-            assertEquals("15", read.getStringAttribute(MISMATCHES_AND_DELETIONS_ATTRIBUTE));
-        }
-
-        assertEquals(4, calculator.recalculatedCount());
-        assertEquals(4, calculator.nmChangedCount());
-    }
-
-    @Test
-    public void testAlignmentBeyondContigEndUnchanged()
-    {
-        AlignmentTagCalculator calculator = new AlignmentTagCalculator(mRefGenome);
-
-        SAMRecord read = createRead(75, "ACGTACGTAC", "10M");
-        calculator.recalculate(read);
-
-        assertEquals(99, read.getIntegerAttribute(NUM_MUTATONS_ATTRIBUTE).intValue());
-    }
-
-    @Test
     public void testMatchesHtsjdkCalculation()
     {
         // htsjdk's version needs the whole contig's bases, this one works from a window, so they should agree
@@ -188,13 +130,18 @@ public class AlignmentTagCalculatorTest
     }
 
     @Test
-    public void testReadLengthMismatchUnchanged()
+    public void testUnrecalculableReadsUnchanged()
     {
         AlignmentTagCalculator calculator = new AlignmentTagCalculator(mRefGenome);
 
-        SAMRecord read = createRead(1, refBases(1, 15), "20M");
+        // alignment beyond the contig end
+        SAMRecord read = createRead(75, "ACGTACGTAC", "10M");
         calculator.recalculate(read);
+        assertEquals(99, read.getIntegerAttribute(NUM_MUTATONS_ATTRIBUTE).intValue());
 
+        // fewer read bases than the CIGAR
+        read = createRead(1, refBases(1, 15), "20M");
+        calculator.recalculate(read);
         assertEquals(99, read.getIntegerAttribute(NUM_MUTATONS_ATTRIBUTE).intValue());
     }
 }

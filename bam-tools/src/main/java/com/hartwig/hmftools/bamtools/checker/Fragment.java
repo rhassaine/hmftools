@@ -33,8 +33,6 @@ import com.hartwig.hmftools.common.bam.SupplementaryReadData;
 import com.hartwig.hmftools.common.codon.Nucleotides;
 import com.hartwig.hmftools.common.utils.Arrays;
 
-import org.jetbrains.annotations.Nullable;
-
 import htsjdk.samtools.Cigar;
 import htsjdk.samtools.CigarElement;
 import htsjdk.samtools.CigarOperator;
@@ -334,11 +332,14 @@ public class Fragment
 
             String mateCigar = read.getFirstOfPairFlag() ? mSecondPrimaryCigar : mFirstPrimaryCigar;
 
-            // an unmapped mate has no CIGAR, and MC:Z:* is not valid
             if(read.getMateUnmappedFlag() || NO_CIGAR.equals(mateCigar))
+            {
                 read.setAttribute(MATE_CIGAR_ATTRIBUTE, null);
+            }
             else
+            {
                 read.setAttribute(MATE_CIGAR_ATTRIBUTE, mateCigar);
+            }
         }
     }
 
@@ -486,14 +487,12 @@ public class Fragment
         read.setAttribute(XS_ATTRIBUTE, null);
     }
 
-    private void setMappedSupplementaryMateUnmapped(@Nullable final SAMRecord mappedRead)
+    private void setMappedSupplementaryMateUnmapped(final SAMRecord mappedRead)
     {
         // supplementaries of the mapped read now have an unmapped mate, which is placed at the mapped read's primary
-        boolean mappedIsFirst = !mFirstUnmapped;
-
         for(SAMRecord read : mReads)
         {
-            if(!read.getSupplementaryAlignmentFlag() || read.getFirstOfPairFlag() != mappedIsFirst)
+            if(!read.getSupplementaryAlignmentFlag() || read.getFirstOfPairFlag() == mFirstUnmapped)
                 continue;
 
             read.setProperPairFlag(false);

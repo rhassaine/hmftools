@@ -41,8 +41,6 @@ import com.hartwig.hmftools.common.genome.refgenome.RefGenomeVersion;
 import com.hartwig.hmftools.common.region.SpecificRegions;
 import com.hartwig.hmftools.common.utils.config.ConfigBuilder;
 
-import org.jetbrains.annotations.Nullable;
-
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SAMSequenceRecord;
 import htsjdk.samtools.ValidationStringency;
@@ -164,7 +162,7 @@ public class CheckConfig
     }
 
     @VisibleForTesting
-    public static SAMSequenceDictionary loadRefDictionary(final String refGenomeFile, @Nullable final SAMSequenceDictionary refDictionary)
+    public static SAMSequenceDictionary loadRefDictionary(final String refGenomeFile, final SAMSequenceDictionary refDictionary)
     {
         if(refDictionary != null && !refDictionary.isEmpty())
             return refDictionary;
